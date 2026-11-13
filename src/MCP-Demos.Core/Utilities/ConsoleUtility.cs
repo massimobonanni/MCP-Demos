@@ -3,7 +3,7 @@
 /// <summary>
 /// Provides utility methods for enhanced console output operations with color support and formatting.
 /// </summary>
-internal static class ConsoleUtility
+public static class ConsoleUtility
 {
     /// <summary>
     /// Writes a message to the console followed by a line terminator, with optional foreground color.

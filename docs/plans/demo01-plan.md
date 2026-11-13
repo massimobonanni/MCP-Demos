@@ -12,7 +12,7 @@ The approved scope includes the console project and its `readme.md`; it excludes
 |---|---|---|
 | 1 | Creating the demo project | done |
 | 2 | Implementing the MCP client | done |
-| 3 | Documenting the demo | to do |
+| 3 | Documenting the demo | done |
 | 4 | Validating the demo | to do |
 
 ## Tasks
