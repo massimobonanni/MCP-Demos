@@ -11,7 +11,7 @@ The approved scope includes the console project and its `readme.md`; it excludes
 | Task number | Title | Completion status |
 |---|---|---|
 | 1 | Creating the demo project | done |
-| 2 | Implementing the MCP client | to do |
+| 2 | Implementing the MCP client | done |
 | 3 | Documenting the demo | to do |
 | 4 | Validating the demo | to do |
 
