@@ -14,7 +14,7 @@ The plan covers the application, infrastructure, and demo documentation. The con
 |---:|---|---|
 | 1 | Create the console project | Done |
 | 2 | Implement the Foundry chat | Done |
-| 3 | Integrate Microsoft Learn MCP tools | To do |
+| 3 | Integrate Microsoft Learn MCP tools | Done |
 | 4 | Provision Foundry and the model with Bicep/AZD | To do |
 | 5 | Configure AZD and .NET user secrets | To do |
 | 6 | Document the demo | To do |
