@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>MCP_Demos._02_MCPChat</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.0" />
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MCP-Demos.Core\MCP-Demos.Core.csproj" />
+  </ItemGroup>
+
+</Project>
