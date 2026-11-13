@@ -5,3 +5,10 @@ infra:
   provider: bicep
   path: ./infra
   module: main
+
+hooks:
+  postprovision:
+    shell: pwsh
+    run: ./scripts/azd/initialize-demo02-secrets.ps1
+    interactive: false
+    continueOnError: false

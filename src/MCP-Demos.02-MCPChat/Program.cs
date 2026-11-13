@@ -1,13 +1,12 @@
 using System.ClientModel;
 using System.Text.Json;
 using System.Net.Http;
-using Azure;
-using Azure.AI.OpenAI;
 using MCP_Demos.Core.Utilities;
 using MCP_Demos._02_MCPChat;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Client;
+using OpenAI;
 
 const string deploymentName = "gpt-6-luna";
 const string learnServerUrl = "https://learn.microsoft.com/api/mcp";
@@ -41,8 +40,8 @@ if (tools is null)
     return 1;
 }
 
-// Build the Foundry-backed chat client and initialize history with system instructions.
-using var chatClient = CreateChatClient(foundryConfiguration, deploymentName);
+// Build the Foundry Responses API client and initialize history with system instructions.
+using var chatClient = CreateResponsesChatClient(foundryConfiguration, deploymentName);
 var conversation = new List<ChatMessage>
 {
     new(ChatRole.System, systemMessage)
@@ -97,7 +96,7 @@ while (true)
     {
         conversation.RemoveAt(conversation.Count - 1);
         ConsoleUtility.WriteLine(
-            $"[MODEL RESPONSE ERROR] The Foundry request failed (HTTP {exception.Status}). Check the endpoint, API key, and deployment configuration.",
+            $"[MODEL RESPONSE ERROR] The Foundry request failed (HTTP {exception.Status}). {exception.Message}",
             ConsoleColor.Red);
     }
     catch (HttpRequestException exception)
@@ -105,7 +104,7 @@ while (true)
         conversation.RemoveAt(conversation.Count - 1);
         var status = exception.StatusCode is { } statusCode ? $" (HTTP {(int)statusCode})" : string.Empty;
         ConsoleUtility.WriteLine(
-            $"[MODEL RESPONSE ERROR] Could not connect to Microsoft Foundry{status}. Check the endpoint and network connection.",
+            $"[MODEL RESPONSE ERROR] Could not connect to Microsoft Foundry{status}.  {exception.Message}",
             ConsoleColor.Red);
     }
 }
@@ -132,11 +131,11 @@ static async Task<IList<McpClientTool>?> GetToolsAsync(McpClient client)
     try
     {
         var tools = await client.ListToolsAsync();
-        ConsoleUtility.WriteLine($"[MCP] Discovered {tools.Count} Microsoft Learn tool(s).", ConsoleColor.DarkCyan);
-        foreach (var tool in tools)
-        {
-            ConsoleUtility.WriteLine($"  {tool.Name}: {tool.Description}", ConsoleColor.DarkCyan);
-        }
+        //ConsoleUtility.WriteLine($"[MCP] Discovered {tools.Count} Microsoft Learn tool(s).", ConsoleColor.DarkCyan);
+        //foreach (var tool in tools)
+        //{
+        //    ConsoleUtility.WriteLine($"  {tool.Name}: {tool.Description}", ConsoleColor.DarkCyan);
+        //}
 
         return tools;
     }
@@ -147,15 +146,20 @@ static async Task<IList<McpClientTool>?> GetToolsAsync(McpClient client)
     }
 }
 
-// Creates the Foundry client and wraps it with the MEAI MCP tool invocation pipeline.
-static IChatClient CreateChatClient(FoundryConfiguration configuration, string deploymentName)
+// Creates the Foundry Responses API client and wraps it with the MEAI MCP tool invocation pipeline.
+#pragma warning disable OPENAI001 // The Responses API adapter is required for tool calls with this model.
+static IChatClient CreateResponsesChatClient(FoundryConfiguration configuration, string deploymentName)
 {
-    var foundryClient = new AzureOpenAIClient(
-        configuration.Endpoint,
-        new AzureKeyCredential(configuration.ApiKey));
+    var clientOptions = new OpenAIClientOptions
+    {
+        Endpoint = new Uri(configuration.Endpoint, "openai/v1/")
+    };
+    var foundryClient = new OpenAIClient(
+        new ApiKeyCredential(configuration.ApiKey),
+        clientOptions);
 
     return new ChatClientBuilder(
-            foundryClient.GetChatClient(deploymentName).AsIChatClient())
+            foundryClient.GetResponsesClient().AsIChatClient(deploymentName))
         .UseFunctionInvocation(configure: functionInvoker =>
         {
             functionInvoker.MaximumConsecutiveErrorsPerRequest = 0;
@@ -191,6 +195,7 @@ static IChatClient CreateChatClient(FoundryConfiguration configuration, string d
         })
         .Build();
 }
+#pragma warning restore OPENAI001
 
 // Checks whether an MCP tool returned an error result instead of successful content.
 static bool IsToolError(object? result)
@@ -257,6 +262,9 @@ static FoundryConfiguration? LoadConfiguration()
         ConsoleUtility.WriteLine($"The {endpointSetting} setting must be an absolute HTTPS URL.", ConsoleColor.Red);
         return null;
     }
+
+    ConsoleUtility.WriteLine($"Foundry endpoint: {foundryEndpoint}", ConsoleColor.Green);
+    ConsoleUtility.WriteLine($"Foundry API key: {apiKey.MaskStringBothEnds()}", ConsoleColor.Green);
 
     return new FoundryConfiguration(foundryEndpoint, apiKey);
 }

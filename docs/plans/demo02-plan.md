@@ -16,7 +16,7 @@ The plan covers the application, infrastructure, and demo documentation. The con
 | 2 | Implement the Foundry chat | Done |
 | 3 | Integrate Microsoft Learn MCP tools | Done |
 | 4 | Provision Foundry and the model with Bicep/AZD | Done |
-| 5 | Configure AZD and .NET user secrets | To do |
+| 5 | Configure AZD and .NET user secrets | Done |
 | 6 | Document the demo | To do |
 | 7 | Validate the build, configuration, and end-to-end flow | To do |
 
