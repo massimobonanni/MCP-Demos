@@ -18,7 +18,15 @@ The plan covers the application, infrastructure, and demo documentation. The con
 | 4 | Provision Foundry and the model with Bicep/AZD | Done |
 | 5 | Configure AZD and .NET user secrets | Done |
 | 6 | Document the demo | Done |
-| 7 | Validate the build, configuration, and end-to-end flow | To do |
+| 7 | Validate the build, configuration, and end-to-end flow | Done |
+
+### Validation results
+
+- Passed `dotnet restore` and `dotnet build --no-restore` for `src/MCP-Demos.02-MCPChat/MCP-Demos.02-MCPChat.csproj` using the installed .NET 10 SDK 10.0.404.
+- Passed `az bicep build --file ./infra/main.bicep --stdout`.
+- Passed all nine offline checks in `pwsh -NoProfile -File ./scripts/azd/tests/Test-Demo02Secrets.ps1`, including execution of the root AZD `postprovision` hook with installed AZD 1.37.3, without provisioning resources.
+- With isolated temporary user-secrets profiles, confirmed missing settings produce a safe diagnostic and exit code 1; confirmed `/quit` exits with code 0 after Microsoft Learn MCP initialization and tool discovery. The latter used dummy Foundry settings and did not send a model request.
+- Live Foundry connectivity was not tested because no explicitly authorized target Azure environment was identified. No Azure resources were created or changed.
 
 ## Tasks and suggested prompts
 
