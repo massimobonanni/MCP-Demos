@@ -158,44 +158,55 @@ static IChatClient CreateResponsesChatClient(FoundryConfiguration configuration,
         new ApiKeyCredential(configuration.ApiKey),
         clientOptions);
 
-    return new ChatClientBuilder(
-            foundryClient.GetResponsesClient().AsIChatClient(deploymentName))
-        .UseFunctionInvocation(configure: functionInvoker =>
-        {
-            functionInvoker.MaximumConsecutiveErrorsPerRequest = 0;
-            functionInvoker.FunctionInvoker = async (context, cancellationToken) =>
-            {
-                ConsoleUtility.WriteLine($"[MCP TOOL CALL] {context.Function.Name}", ConsoleColor.Magenta);
-                ConsoleUtility.WriteLine($"Arguments: {JsonSerializer.Serialize(context.Arguments)}", ConsoleColor.DarkMagenta);
+    // Adapt the Responses SDK client to the common Microsoft.Extensions.AI chat interface.
+    var responsesClient = foundryClient.GetResponsesClient();
+    var modelClient = responsesClient.AsIChatClient(deploymentName);
+    var chatClientBuilder = new ChatClientBuilder(modelClient);
 
-                object? result;
-                try
-                {
-                    result = await context.Function.InvokeAsync(context.Arguments, cancellationToken);
-                }
-                catch (Exception exception)
-                {
-                    ConsoleUtility.WriteLine($"[MCP RESULT - ERROR] {exception.Message}", ConsoleColor.Red);
-                    throw new McpToolInvocationException(context.Function.Name, exception);
-                }
+    // The model requests a tool; this middleware executes it and sends its result back to the model.
+    chatClientBuilder.UseFunctionInvocation(configure: functionInvoker =>
+    {
+        // Stop the turn on the first tool exception instead of asking the model to recover from it.
+        functionInvoker.MaximumConsecutiveErrorsPerRequest = 0;
+        functionInvoker.FunctionInvoker = InvokeMcpToolAsync;
+    });
 
-                var toolReportedError = IsToolError(result);
-                ConsoleUtility.WriteLine(
-                    toolReportedError ? "[MCP RESULT - ERROR]" : "[MCP RESULT]",
-                    toolReportedError ? ConsoleColor.Red : ConsoleColor.DarkGreen);
-                ConsoleUtility.WriteLine(FormatToolResult(result), ConsoleColor.White);
-
-                if (toolReportedError)
-                {
-                    throw new McpToolInvocationException(context.Function.Name);
-                }
-
-                return result;
-            };
-        })
-        .Build();
+    return chatClientBuilder.Build();
 }
 #pragma warning restore OPENAI001
+
+// Executes the requested MCP tool and displays its error before stopping the turn if it fails.
+static async ValueTask<object?> InvokeMcpToolAsync(
+    FunctionInvocationContext context,
+    CancellationToken cancellationToken)
+{
+    ConsoleUtility.WriteLine($"[MCP TOOL CALL] {context.Function.Name}", ConsoleColor.Magenta);
+    ConsoleUtility.WriteLine($"\tArguments: {JsonSerializer.Serialize(context.Arguments)}", ConsoleColor.DarkMagenta);
+
+    object? result;
+    try
+    {
+        // MCP tools are exposed as AIFunctions; invoking one sends the call to the MCP server.
+        result = await context.Function.InvokeAsync(context.Arguments, cancellationToken);
+    }
+    catch (Exception exception)
+    {
+        ConsoleUtility.WriteLine($"[MCP RESULT - ERROR] {exception.Message}", ConsoleColor.Red);
+        throw new McpToolInvocationException(context.Function.Name, exception);
+    }
+
+    // An MCP server can report failure through isError without throwing an exception.
+    var toolReportedError = IsToolError(result);
+    if (toolReportedError)
+    {
+        ConsoleUtility.WriteLine("[MCP RESULT - ERROR]", ConsoleColor.Red);
+        ConsoleUtility.WriteLine(FormatToolResult(result), ConsoleColor.Red);
+        throw new McpToolInvocationException(context.Function.Name);
+    }
+
+    // The middleware passes this result to the model so it can produce the final answer.
+    return result;
+}
 
 // Checks whether an MCP tool returned an error result instead of successful content.
 static bool IsToolError(object? result)
@@ -263,8 +274,10 @@ static FoundryConfiguration? LoadConfiguration()
         return null;
     }
 
-    ConsoleUtility.WriteLine($"Foundry endpoint: {foundryEndpoint}", ConsoleColor.Green);
-    ConsoleUtility.WriteLine($"Foundry API key: {apiKey.MaskStringBothEnds()}", ConsoleColor.Green);
+    ConsoleUtility.WriteLine("Configuration loaded.", ConsoleColor.Green);
+    ConsoleUtility.WriteLine($"\tFoundry endpoint: {foundryEndpoint}", ConsoleColor.Green);
+    ConsoleUtility.WriteLine($"\tFoundry API key: {apiKey.MaskStringBothEnds()}", ConsoleColor.Green);
+    ConsoleUtility.WriteLine();
 
     return new FoundryConfiguration(foundryEndpoint, apiKey);
 }
