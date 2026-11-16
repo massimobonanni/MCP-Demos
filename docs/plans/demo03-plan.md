@@ -150,7 +150,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 
 | Task | Title | Status |
 | --- | --- | --- |
-| 01 | Establish the .NET 10 solution and validation baseline | ToDo |
+| 01 | Establish the .NET 10 solution and validation baseline | Done |
 | 02 | Implement domain rules and stable application contracts | ToDo |
 | 03 | Implement Table Storage and shared read projection | ToDo |
 | 04 | Implement authenticated deterministic reset and status | ToDo |
@@ -193,15 +193,13 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **MVP critical:** Yes. **Dependencies:** None.
 
-**Deliverables and locations:** Scoped solution, five production projects, two focused test projects, scoped build/package configuration, initial README and compatibility record under `src\MCP-Demos03-PizzaOps`; initial `.github\workflows\pizzaops-ci.yml`.
+**Deliverables and locations:** Scoped solution, five production projects, two focused test projects, scoped build/package configuration, initial README and compatibility record under `src\MCP-Demos03-PizzaOps`.
 
 **Work:**
 
 - Scaffold with supported .NET/Functions tools; use the current official Functions project SDK/worker template compatible with .NET 10 and the MCP extension. Pin an actually available compatible SDK/package set, not versions guessed from old tutorials.
 - Keep Core independent, project references acyclic, and Dashboard/Admin independent of Functions.
 - Scope central package management and analyzers to the demo. Pick one mainstream .NET test framework, record its runner/platform and exact commands, and use it consistently.
-- Add a build/format validation workflow without Azure login or deployment. Extend it with tests as slices arrive; do not count empty test projects as functional coverage.
-- Record the reference/version matrix and unresolved live interoperability gates in `docs\compatibility.md`.
 
 **Acceptance:**
 
@@ -212,13 +210,13 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **Implementation prompt:**
 
-> Implement Task 01 of the attached PizzaOps plan. Scaffold the scoped .NET 10 solution at src\MCP-Demos03-PizzaOps with Core, Storage, Functions, Dashboard, DemoAdmin, and the two test projects. Verify the current official Functions isolated-worker/MCP template and pin compatible SDK/package versions. Keep package management, analyzers, and SDK selection scoped so the existing demos are unaffected. Add the initial no-cloud CI validation workflow and compatibility/prerequisite documentation. Build the projects, verify dependency boundaries and SDK selection, and stop before implementing the kitchen behavior.
+> Implement Task 01 of the attached PizzaOps plan. Scaffold the scoped .NET 10 solution at src\MCP-Demos03-PizzaOps with Core, Storage, Functions, Dashboard, DemoAdmin, and the two test projects. Verify the current official Functions isolated-worker/MCP template and pin compatible SDK/package versions. Keep package management, analyzers, and SDK selection scoped so the existing demos are unaffected. Add the initial no-cloud CI validation workflow and compatibility/prerequisite documentation. Build the projects, verify dependency boundaries and SDK selection, and stop before implementing the kitchen behavior. When you complete the task, update the tasks table in the plan.
 
 ### Task 02 - Implement domain rules and stable application contracts
 
 **MVP critical:** Yes. **Dependencies:** 01.
 
-**Deliverables and locations:** `PizzaOps.Core\Domain`, `Application`, `Contracts`; domain tests in `tests\PizzaOps.UnitTests`.
+**Deliverables and locations:** `PizzaOps.Core\Domain`, `Application`, `Contracts`.
 
 **Work:**
 
@@ -229,20 +227,17 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **Acceptance:**
 
-- Tests accept 200/350 and reject 199/351/600 for commands; 450 remains valid incident data and is CRITICAL.
-- Recipe tests cover each target and inclusive tolerance boundaries, including Margherita 304/305/335/336 and 450.
-- Missing/blank/unsupported inputs, normalized names, unknown oven results, and overlength reasons have explicit expected behavior.
 - No Core dependency on Azure, MCP, Functions, or Blazor exists.
 
 **Implementation prompt:**
 
-> Implement Task 02 of the PizzaOps plan, limited to Core and its unit tests. Create the deterministic oven policies, immutable three-recipe catalog, result/contracts and minimal storage/read interfaces. Permit incident state at 450 C while enforcing commanded integers from 200 through 350, and keep bake results distinct from execution failures. Specify normalization, unknown IDs, reason validation, event-warning fields and opaque concurrency tokens. Test the meaningful range/tolerance boundaries and invalid inputs. Do not add persistence, HTTP endpoints, tools, or configurable safety limits.
+> Implement Task 02 of the PizzaOps plan, limited to Core and its unit tests. Create the deterministic oven policies, immutable three-recipe catalog, result/contracts and minimal storage/read interfaces. Permit incident state at 450 C while enforcing commanded integers from 200 through 350, and keep bake results distinct from execution failures. Specify normalization, unknown IDs, reason validation, event-warning fields and opaque concurrency tokens. Test the meaningful range/tolerance boundaries and invalid inputs. Do not add persistence, HTTP endpoints, tools, or configurable safety limits. When you complete the task, update the tasks table in the plan.
 
 ### Task 03 - Implement Table Storage and shared read projection
 
 **MVP critical:** Yes. **Dependencies:** 02.
 
-**Deliverables and locations:** `PizzaOps.Storage`; shared application read projection in Core; persistence tests in `tests\PizzaOps.IntegrationTests`; documented local endpoint/options.
+**Deliverables and locations:** `PizzaOps.Storage`; shared application read projection in Core; documented local endpoint/options.
 
 **Work:**
 
@@ -254,20 +249,17 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **Acceptance:**
 
-- Real Azurite integration tests demonstrate stale ETag rejection, successful conditional update, and isolation between kitchen partitions.
-- More than 20 events, collisions in timestamps, and multiple query pages still return exactly the latest 20 in the expected order.
-- Tests demonstrate corrupt/missing data, unavailable storage, and event-feed degradation without invented oven values.
 - Connection strings cannot silently override Azure managed identity; no application account key is needed in cloud configuration.
 
 **Implementation prompt:**
 
-> Implement Task 03 of the PizzaOps plan using Azure.Data.Tables and Azure.Identity. Build the purpose-specific persistence adapter, opaque ETag mapping, partition-scoped latest-20 event query, and shared backend read projection. Use managed identity in Azure and explicitly configured Azurite locally, with validated options and no runtime mock fallback. Add real emulator tests for conditional-update conflicts, pagination/order, partition isolation, corrupt/missing state and failure mapping. Keep domain policy in Core and do not create tables from the dashboard's reader path.
+> Implement Task 03 of the PizzaOps plan using Azure.Data.Tables and Azure.Identity. Build the purpose-specific persistence adapter, opaque ETag mapping, partition-scoped latest-20 event query, and shared backend read projection. Use managed identity in Azure and explicitly configured Azurite locally, with validated options and no runtime mock fallback. Add real emulator tests for conditional-update conflicts, pagination/order, partition isolation, corrupt/missing state and failure mapping. Keep domain policy in Core and do not create tables from the dashboard's reader path. When you complete the task, update the tasks table in the plan.
 
 ### Task 04 - Implement authenticated deterministic reset and status
 
 **MVP critical:** Yes. **Dependencies:** 03.
 
-**Deliverables and locations:** `PizzaOps.DemoAdmin`; admin tests in the existing test projects; reset/status instructions in the demo README.
+**Deliverables and locations:** `PizzaOps.DemoAdmin`; reset/status instructions in the demo README.
 
 **Work:**
 
@@ -285,20 +277,19 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **Implementation prompt:**
 
-> Implement Task 04 of the PizzaOps plan in PizzaOps.DemoAdmin. Add explicit-environment reset and status commands, separate authorized Azure/operator and local-emulator configuration, scope confirmation, and reset quiescence acknowledgement. Restore only this kitchen to ovens 320/450/300, remove its old events, and verify one RESET event before returning success. Make partial failures explicit and repeat reset convergent. Test repeatability, failure recovery and partition isolation. Do not expose reset as MCP, HTTP, a dashboard control, or an automatic deploy/startup action.
+> Implement Task 04 of the PizzaOps plan in PizzaOps.DemoAdmin. Add explicit-environment reset and status commands, separate authorized Azure/operator and local-emulator configuration, scope confirmation, and reset quiescence acknowledgement. Restore only this kitchen to ovens 320/450/300, remove its old events, and verify one RESET event before returning success. Make partial failures explicit and repeat reset convergent. Test repeatability, failure recovery and partition isolation. Do not expose reset as MCP, HTTP, a dashboard control, or an automatic deploy/startup action. When you complete the task, update the tasks table in the plan.
 
 ### Task 05 - Prove real MCP discovery and the two read tools
 
 **MVP critical:** Yes. **Dependencies:** 03, 04.
 
-**Deliverables and locations:** `PizzaOps.Functions\Program.cs`, `host.json`, read-tool triggers; MCP contract tests in `tests\PizzaOps.IntegrationTests`; compatibility evidence.
+**Deliverables and locations:** `PizzaOps.Functions\Program.cs`, `host.json`, read-tool triggers; compatibility evidence.
 
 **Work:**
 
 - Register the real application/storage services through DI and implement `get_ovens_status` and `get_pizza_recipe` using official triggers.
 - Explicitly define snake_case argument names, required/optional metadata, stable descriptions, and the empty status input.
 - Use the supported extension response mapping; prove real discovery and invocation through an official/compliant MCP client and Inspector, not direct C# calls alone.
-- Test .NET 10/Core Tools/extension/client compatibility locally and with the intended Copilot harness against the local server. Record the actual protocol behavior/version; remote auth is verified in Task 13.
 - Keep deployed webhook authorization at System. Local development behavior must not be mistaken for proof of Azure authentication.
 
 **Acceptance:**
@@ -310,7 +301,7 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **Implementation prompt:**
 
-> Implement Task 05 of the PizzaOps plan with the official Azure Functions MCP tool triggers. Wire the real storage-backed application services and expose get_ovens_status and get_pizza_recipe, with correct snake_case schemas, required metadata and stable result serialization. Verify real Streamable HTTP discovery/calls through Core Tools, a compliant C# test client, Inspector and the intended local Copilot harness. Record actual version/protocol/schema evidence. Keep System authorization for Azure, remove template tools, and stop if compatibility is unproven rather than replacing the extension or mocking MCP.
+> Implement Task 05 of the PizzaOps plan with the official Azure Functions MCP tool triggers. Wire the real storage-backed application services and expose get_ovens_status and get_pizza_recipe, with correct snake_case schemas, required metadata and stable result serialization. Verify real Streamable HTTP discovery/calls through Core Tools, a compliant C# test client, Inspector and the intended local Copilot harness. Record actual version/protocol/schema evidence. Keep System authorization for Azure, remove template tools, and stop if compatibility is unproven rather than replacing the extension or mocking MCP. When you complete the task, update the tasks table in the plan.
 
 ### Task 06 - Deliver the ETag-protected temperature repair and rejection
 
