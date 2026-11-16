@@ -157,7 +157,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 05 | Prove real MCP discovery and the two read tools | Blocked |
 | 06 | Deliver the ETag-protected temperature repair and rejection | Done |
 | 07 | Deliver the deterministic test-bake tool | Done |
-| 08 | Expose the read-only dashboard API and health checks | ToDo |
+| 08 | Expose the read-only dashboard API and health checks | Done |
 | 09 | Build the live, accessible Blazor dashboard | ToDo |
 | 10 | Complete telemetry and local reliability verification | ToDo |
 | 11 | Extend Bicep with minimal PizzaOps resources and RBAC | ToDo |

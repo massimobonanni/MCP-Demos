@@ -13,14 +13,14 @@ public sealed class KitchenReadService : IKitchenReadService
         "oven-03"
     };
 
-    private readonly IOvenRepository ovenRepository;
-    private readonly IKitchenEventRepository eventRepository;
+    private readonly IOvenReader ovenRepository;
+    private readonly IKitchenEventReader eventRepository;
     private readonly TimeProvider timeProvider;
 
     /// <summary>Creates the shared status projection.</summary>
     public KitchenReadService(
-        IOvenRepository ovenRepository,
-        IKitchenEventRepository eventRepository,
+        IOvenReader ovenRepository,
+        IKitchenEventReader eventRepository,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(ovenRepository);

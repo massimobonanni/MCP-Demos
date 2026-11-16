@@ -1,0 +1,10 @@
+@baseUrl = http://localhost:5144
+
+### Kitchen state
+GET {{baseUrl}}/api/kitchen/state
+
+### Liveness
+GET {{baseUrl}}/health/live
+
+### Readiness
+GET {{baseUrl}}/health/ready

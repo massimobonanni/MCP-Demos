@@ -79,6 +79,25 @@ events but never alter the oven. Event append failure preserves `TEST_COMPLETED`
 and its observation, with `event_recorded: false` and an `EVENT_WRITE_FAILED`
 warning (or `EVENT_WRITE_OUTCOME_UNKNOWN` when persistence is uncertain).
 
+## Dashboard read API
+
+Run the dashboard in Development with the same Azurite settings as the Functions
+host, after the operator has reset the kitchen:
+
+```powershell
+$env:PizzaOps__TableStorage__Mode = "Azurite"
+$env:PizzaOps__TableStorage__AzuriteConnectionString = "UseDevelopmentStorage=true"
+dotnet run --project .\src\PizzaOps.Dashboard
+```
+
+`GET /api/kitchen/state` returns the shared oven projection and recent events.
+It reports an unavailable event feed explicitly; missing or invalid ovens and
+storage failures return HTTP 503. `GET /health/live` checks the process, while
+`GET /health/ready` requires both a complete kitchen and a readable event feed.
+Storage-backed requests time out after five seconds. All three responses use
+`Cache-Control: no-store`. The dashboard never initializes tables or connects
+to MCP; in Azure its managed identity needs only Table data read access.
+
 ## Prerequisites
 
 - .NET 10 SDK. The scoped `global.json` selects SDK `10.0.404` and permits a

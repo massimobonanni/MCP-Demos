@@ -3,11 +3,8 @@ using PizzaOps.Core.Domain;
 namespace PizzaOps.Core.Application;
 
 /// <summary>Purpose-specific persistence operations for existing ovens.</summary>
-public interface IOvenRepository
+public interface IOvenRepository : IOvenReader
 {
-    /// <summary>Reads all persisted ovens; callers derive health from each temperature.</summary>
-    Task<IReadOnlyList<Oven>> GetAllAsync(CancellationToken cancellationToken);
-
     /// <summary>
     /// Reads an oven by normalized identifier and returns null when it is unknown.
     /// Caller input is trimmed and invariant-lowercased before lookup; a blank caller value

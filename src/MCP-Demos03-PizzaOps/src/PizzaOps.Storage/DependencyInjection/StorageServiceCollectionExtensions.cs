@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using PizzaOps.Core.Application;
+using PizzaOps.Core.Domain;
 using PizzaOps.Storage.Persistence;
 
 namespace PizzaOps.Storage.DependencyInjection;
@@ -24,32 +25,11 @@ public static class StorageServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
 
-        services.AddSingleton<IValidateOptions<PizzaOpsTableOptions>>(
-            new PizzaOpsTableOptionsValidator(environmentName));
-        services.AddOptions<PizzaOpsTableOptions>()
-            .Bind(configuration.GetSection(PizzaOpsTableOptions.SectionName))
-            .ValidateOnStart();
-
+        AddOptions(services, configuration, environmentName);
         services.AddSingleton(serviceProvider =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<PizzaOpsTableOptions>>().Value;
-
-            if (string.Equals(options.Mode, "Azurite", StringComparison.OrdinalIgnoreCase))
-            {
-                return new TableStorageClients(
-                    new TableServiceClient(options.AzuriteConnectionString, CreateClientOptions(maxRetries: 2)),
-                    new TableServiceClient(options.AzuriteConnectionString, CreateClientOptions(maxRetries: 0)));
-            }
-
-            var endpoint = new Uri(options.TableEndpoint!, UriKind.Absolute);
-            var identity = string.IsNullOrWhiteSpace(options.ManagedIdentityClientId)
-                ? ManagedIdentityId.SystemAssigned
-                : ManagedIdentityId.FromUserAssignedClientId(options.ManagedIdentityClientId);
-            var credential = new ManagedIdentityCredential(identity);
-
-            return new TableStorageClients(
-                new TableServiceClient(endpoint, credential, CreateClientOptions(maxRetries: 2)),
-                new TableServiceClient(endpoint, credential, CreateClientOptions(maxRetries: 0)));
+            return new TableStorageClients(CreateClient(options, maxRetries: 2), CreateClient(options, maxRetries: 0));
         });
         services.AddSingleton(serviceProvider => new TableKitchenRepository(
             serviceProvider.GetRequiredService<TableStorageClients>(),
@@ -60,10 +40,72 @@ public static class StorageServiceCollectionExtensions
             serviceProvider.GetRequiredService<TableKitchenRepository>());
         services.AddSingleton<IKitchenTableMaintenance>(serviceProvider =>
             serviceProvider.GetRequiredService<TableKitchenRepository>());
-        services.AddSingleton<TimeProvider>(TimeProvider.System);
-        services.AddSingleton<IKitchenReadService, KitchenReadService>();
+        services.AddSingleton<IOvenReader>(serviceProvider => serviceProvider.GetRequiredService<IOvenRepository>());
+        services.AddSingleton<IKitchenEventReader>(serviceProvider => serviceProvider.GetRequiredService<IKitchenEventRepository>());
+        AddReadProjection(services);
 
         return services;
+    }
+
+    /// <summary>Registers only read ports and the shared projection; no tables are created.</summary>
+    public static IServiceCollection AddPizzaOpsReadOnlyStorage(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string environmentName)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+
+        AddOptions(services, configuration, environmentName);
+        services.AddSingleton(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<PizzaOpsTableOptions>>();
+            return new ReadRepository(new TableKitchenRepository(CreateClient(options.Value, maxRetries: 2), options));
+        });
+        services.AddSingleton<IOvenReader>(serviceProvider => serviceProvider.GetRequiredService<ReadRepository>());
+        services.AddSingleton<IKitchenEventReader>(serviceProvider => serviceProvider.GetRequiredService<ReadRepository>());
+        AddReadProjection(services);
+        return services;
+    }
+
+    private static void AddOptions(IServiceCollection services, IConfiguration configuration, string environmentName)
+    {
+        services.AddSingleton<IValidateOptions<PizzaOpsTableOptions>>(
+            new PizzaOpsTableOptionsValidator(environmentName));
+        services.AddOptions<PizzaOpsTableOptions>()
+            .Bind(configuration.GetSection(PizzaOpsTableOptions.SectionName))
+            .ValidateOnStart();
+
+    }
+
+    private static void AddReadProjection(IServiceCollection services)
+    {
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<IKitchenReadService, KitchenReadService>();
+    }
+
+    private static TableServiceClient CreateClient(PizzaOpsTableOptions options, int maxRetries)
+    {
+        if (string.Equals(options.Mode, "Azurite", StringComparison.OrdinalIgnoreCase))
+        {
+            return new TableServiceClient(options.AzuriteConnectionString, CreateClientOptions(maxRetries));
+        }
+
+        var endpoint = new Uri(options.TableEndpoint!, UriKind.Absolute);
+        var identity = string.IsNullOrWhiteSpace(options.ManagedIdentityClientId)
+            ? ManagedIdentityId.SystemAssigned
+            : ManagedIdentityId.FromUserAssignedClientId(options.ManagedIdentityClientId);
+        return new TableServiceClient(endpoint, new ManagedIdentityCredential(identity), CreateClientOptions(maxRetries));
+    }
+
+    private sealed class ReadRepository(TableKitchenRepository repository) : IOvenReader, IKitchenEventReader
+    {
+        public Task<IReadOnlyList<Oven>> GetAllAsync(CancellationToken cancellationToken) =>
+            repository.GetAllAsync(cancellationToken);
+
+        public Task<IReadOnlyList<KitchenEvent>> GetLatestAsync(int count, CancellationToken cancellationToken) =>
+            repository.GetLatestAsync(count, cancellationToken);
     }
 
     private static TableClientOptions CreateClientOptions(int maxRetries)
