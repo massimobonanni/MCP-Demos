@@ -15,6 +15,110 @@ namespace PizzaOps.IntegrationTests;
 public sealed class McpTemperatureToolTests
 {
     [McpFact]
+    public async Task RealEndpointBakesDeterministicallyWithoutChangingOvensAndReportsEventFailure()
+    {
+        var reset = CreateResetService();
+        await reset.ResetAsync(CancellationToken.None);
+        var tableService = new TableServiceClient("UseDevelopmentStorage=true");
+        var ovensTable = tableService.GetTableClient("PizzaOpsOvens");
+        var eventsTable = tableService.GetTableClient("PizzaOpsEvents");
+
+        try
+        {
+            var transport = new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri("http://127.0.0.1:7071/runtime/webhooks/mcp"),
+                TransportMode = HttpTransportMode.StreamableHttp
+            });
+            await using var client = await McpClient.CreateAsync(transport);
+
+            using var recipe = await CallAsync(client, "get_pizza_recipe", new() { ["pizza_type"] = "margherita" });
+            Assert.Equal(320, recipe.RootElement.GetProperty("data").GetProperty("target_temperature_c").GetInt32());
+            var initial = (await ovensTable.GetEntityAsync<TableEntity>("main-kitchen", "oven-02")).Value;
+            using var burnt = await CallBakeAsync(client, "BURNT", 450);
+            AssertOvenUnchanged(initial, (await ovensTable.GetEntityAsync<TableEntity>("main-kitchen", "oven-02")).Value);
+
+            foreach (var (temperature, outcome) in new[]
+            {
+                (304, "UNDERCOOKED"), (305, "PASS"), (335, "PASS"), (336, "BURNT"), (320, "PASS")
+            })
+            {
+                using var changed = await CallAsync(
+                    client,
+                    "set_oven_temperature",
+                    new() { ["oven_id"] = "oven-02", ["target_temperature_c"] = temperature });
+                Assert.True(changed.RootElement.GetProperty("success").GetBoolean());
+                var before = (await ovensTable.GetEntityAsync<TableEntity>("main-kitchen", "oven-02")).Value;
+                using var bake = await CallBakeAsync(client, outcome, temperature);
+                AssertOvenUnchanged(before, (await ovensTable.GetEntityAsync<TableEntity>("main-kitchen", "oven-02")).Value);
+            }
+
+            var repaired = (await ovensTable.GetEntityAsync<TableEntity>("main-kitchen", "oven-02")).Value;
+            using var repeated = await CallBakeAsync(client, "PASS", 320);
+
+            using var missingOven = await CallAsync(
+                client, "bake_test_pizza", new() { ["oven_id"] = "oven-99", ["pizza_type"] = "margherita" });
+            Assert.False(missingOven.RootElement.GetProperty("success").GetBoolean());
+            Assert.Equal("OVEN_NOT_FOUND", missingOven.RootElement.GetProperty("code").GetString());
+            using var missingRecipe = await CallAsync(
+                client, "bake_test_pizza", new() { ["oven_id"] = "oven-02", ["pizza_type"] = "unknown" });
+            Assert.False(missingRecipe.RootElement.GetProperty("success").GetBoolean());
+            Assert.Equal("RECIPE_NOT_FOUND", missingRecipe.RootElement.GetProperty("code").GetString());
+
+            foreach (var arguments in new Dictionary<string, object?>[]
+            {
+                [],
+                new() { ["oven_id"] = "oven-02" },
+                new() { ["pizza_type"] = "margherita" },
+                new() { ["oven_id"] = null, ["pizza_type"] = "margherita" },
+                new() { ["oven_id"] = "oven-02", ["pizza_type"] = null },
+                new() { ["oven_id"] = " ", ["pizza_type"] = "margherita" },
+                new() { ["oven_id"] = "oven-02", ["pizza_type"] = " " },
+                new() { ["oven_id"] = 2, ["pizza_type"] = "margherita" },
+                new() { ["oven_id"] = "oven-02", ["pizza_type"] = 123 },
+                new() { ["oven_id"] = "oven-02", ["pizza_type"] = "margherita", ["temperature_c"] = 450 }
+            })
+            {
+                await AssertCallFailsSafelyAsync(client, "bake_test_pizza", arguments);
+            }
+
+            var events = await CreateRepository().GetLatestAsync(20, CancellationToken.None);
+            var bakes = events.Where(item => item.EventType == KitchenEventType.TestBake).ToArray();
+            Assert.Equal(7, bakes.Length);
+            Assert.Equal(7, bakes.Select(item => item.EventId).Distinct(StringComparer.Ordinal).Count());
+            Assert.Contains(bakes, item =>
+                item.Outcome == KitchenEventOutcome.Fail &&
+                item.Summary.Contains("BURNT", StringComparison.Ordinal) &&
+                item.Summary.Contains("450 C", StringComparison.Ordinal) &&
+                item.Summary.Contains("305-335 C", StringComparison.Ordinal));
+            Assert.Contains(bakes, item => item.Outcome == KitchenEventOutcome.Pass);
+
+            using var status = await CallAsync(client, "get_ovens_status", []);
+            Assert.Equal(320, status.RootElement.GetProperty("data").GetProperty("ovens")
+                .EnumerateArray().Single(item => item.GetProperty("oven_id").GetString() == "oven-02")
+                .GetProperty("temperature_c").GetInt32());
+
+            await eventsTable.DeleteAsync();
+            using var eventFailure = await CallAsync(
+                client, "bake_test_pizza", new() { ["oven_id"] = "oven-02", ["pizza_type"] = "margherita" });
+            var failureRoot = eventFailure.RootElement;
+            Assert.True(failureRoot.GetProperty("success").GetBoolean());
+            Assert.Equal("TEST_COMPLETED", failureRoot.GetProperty("code").GetString());
+            Assert.Equal("PASS", failureRoot.GetProperty("data").GetProperty("result").GetString());
+            Assert.False(failureRoot.GetProperty("event_recorded").GetBoolean());
+            Assert.StartsWith(
+                "EVENT_WRITE_FAILED:",
+                Assert.Single(failureRoot.GetProperty("warnings").EnumerateArray()).GetString(),
+                StringComparison.Ordinal);
+            AssertOvenUnchanged(repaired, (await ovensTable.GetEntityAsync<TableEntity>("main-kitchen", "oven-02")).Value);
+        }
+        finally
+        {
+            await reset.ResetAsync(CancellationToken.None);
+        }
+    }
+
+    [McpFact]
     public async Task RealEndpointChangesRejectsNoOpsAndSafelyRejectsMalformedArguments()
     {
         var reset = CreateResetService();
@@ -138,6 +242,36 @@ public sealed class McpTemperatureToolTests
         {
             await reset.ResetAsync(CancellationToken.None);
         }
+    }
+
+    private static async Task<JsonDocument> CallBakeAsync(McpClient client, string outcome, int observedTemperatureC)
+    {
+        var result = await CallAsync(
+            client, "bake_test_pizza", new() { ["oven_id"] = " OVEN-02 ", ["pizza_type"] = " MarGhEriTa " });
+        var root = result.RootElement;
+        Assert.True(root.GetProperty("success").GetBoolean());
+        Assert.Equal("TEST_COMPLETED", root.GetProperty("code").GetString());
+        Assert.True(root.GetProperty("event_recorded").GetBoolean());
+        Assert.Empty(root.GetProperty("warnings").EnumerateArray());
+        var data = root.GetProperty("data");
+        Assert.Equal(outcome, data.GetProperty("result").GetString());
+        Assert.Equal(observedTemperatureC, data.GetProperty("oven_temperature_c").GetInt32());
+        Assert.Equal("oven-02", data.GetProperty("oven_id").GetString());
+        Assert.Equal("margherita", data.GetProperty("pizza_type").GetString());
+        Assert.Equal(320, data.GetProperty("target_temperature_c").GetInt32());
+        Assert.Equal(15, data.GetProperty("tolerance_c").GetInt32());
+        Assert.Equal(305, data.GetProperty("minimum_passing_temperature_c").GetInt32());
+        Assert.Equal(335, data.GetProperty("maximum_passing_temperature_c").GetInt32());
+        return result;
+    }
+
+    private static void AssertOvenUnchanged(TableEntity before, TableEntity after)
+    {
+        Assert.Equal(before.ETag, after.ETag);
+        Assert.Equal(before.Timestamp, after.Timestamp);
+        Assert.Equal(
+            before.OrderBy(item => item.Key, StringComparer.Ordinal),
+            after.OrderBy(item => item.Key, StringComparer.Ordinal));
     }
 
     private static KitchenResetService CreateResetService()

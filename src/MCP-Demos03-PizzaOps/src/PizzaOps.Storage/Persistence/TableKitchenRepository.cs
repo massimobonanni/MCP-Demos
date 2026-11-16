@@ -107,6 +107,10 @@ public sealed class TableKitchenRepository :
         {
             throw Translate(exception, isWrite: false);
         }
+        catch (AggregateException exception) when (IsReadRetryFailure(exception))
+        {
+            throw TranslateReadRetryFailure(exception);
+        }
     }
 
     /// <inheritdoc />

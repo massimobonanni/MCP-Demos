@@ -21,9 +21,23 @@ public sealed class McpReadToolsTests
 
         var tools = await client.ListToolsAsync();
         Assert.Equal(
-            ["get_ovens_status", "get_pizza_recipe", "set_oven_temperature"],
+            ["bake_test_pizza", "get_ovens_status", "get_pizza_recipe", "set_oven_temperature"],
             tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
         Assert.All(tools, tool => Assert.False(string.IsNullOrWhiteSpace(tool.Description)));
+        Assert.Empty(await client.ListResourcesAsync());
+        Assert.Empty(await client.ListResourceTemplatesAsync());
+        Assert.Empty(await client.ListPromptsAsync());
+
+        var bakeSchema = tools.Single(tool => tool.Name == "bake_test_pizza").JsonSchema;
+        Assert.Equal("object", bakeSchema.GetProperty("type").GetString());
+        var bakeProperties = bakeSchema.GetProperty("properties");
+        Assert.Equal(2, bakeProperties.EnumerateObject().Count());
+        Assert.Equal("string", bakeProperties.GetProperty("oven_id").GetProperty("type").GetString());
+        Assert.Equal("string", bakeProperties.GetProperty("pizza_type").GetProperty("type").GetString());
+        Assert.Equal(
+            ["oven_id", "pizza_type"],
+            bakeSchema.GetProperty("required").EnumerateArray()
+                .Select(argument => argument.GetString()).Order(StringComparer.Ordinal));
         var statusSchema = tools.Single(tool => tool.Name == "get_ovens_status").JsonSchema;
         Assert.Equal("object", statusSchema.GetProperty("type").GetString());
         Assert.Empty(statusSchema.GetProperty("properties").EnumerateObject());

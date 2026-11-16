@@ -100,6 +100,45 @@ Run the scaffolded test projects from the solution directory with
 tests, so this command confirms runner discovery only and is not coverage
 evidence.
 
+## Task 07 local four-tool and bake verification
+
+On 2026-11-16 the same pinned host and official C# client negotiated
+`2025-06-18` and passed all three opt-in `FullyQualifiedName~Mcp` tests against
+local Azurite. The real `tools/list` catalog contains exactly
+`bake_test_pizza`, `get_ovens_status`, `get_pizza_recipe`, and
+`set_oven_temperature`. Bake has exactly two required string properties:
+`oven_id` and `pizza_type`. Its description explicitly discloses event writes.
+As with the other tools, the return value is application JSON in a text content
+block, not MCP structured content.
+
+The extension advertises generic resource/prompt support. Actual
+`resources/list`, `resources/templates/list`, and `prompts/list` return empty
+catalogs; no resources, templates, prompts, or admin tools are registered.
+The adapter checks original invocation arguments because the extension can
+coerce non-string values and does not advertise `additionalProperties: false`.
+
+The wire tests verify a completed BURNT observation at 450 C, repair to PASS
+at 320 C, both inclusive Margherita tolerance boundaries and adjacent failures,
+normalized and missing/invalid arguments, unique repeated events, and exact
+oven entity/ETag/timestamp preservation. Temporarily deleting the local events
+table verifies that a completed bake remains `TEST_COMPLETED` with its observed
+result, `event_recorded: false`, and an explicit warning. Reset restores the
+local tables and canonical kitchen afterward. Focused unit tests additionally
+verify unknown event-write outcomes and cancellation without replay.
+
+Validation commands, from the solution directory (with Azurite, a freshly
+reset kitchen, and the Functions host running for the MCP tests):
+
+```powershell
+dotnet test .\tests\PizzaOps.UnitTests\PizzaOps.UnitTests.csproj --no-restore --filter "FullyQualifiedName~Bake|FullyQualifiedName~TemperatureChangeServiceTests|FullyQualifiedName~TableReadFailureTests|FullyQualifiedName~ValidationAndContractsTests"
+$env:PIZZAOPS_MCP_TESTS = "true"
+dotnet test .\tests\PizzaOps.IntegrationTests\PizzaOps.IntegrationTests.csproj --no-restore --filter "FullyQualifiedName~Mcp"
+```
+
+This evidence is local only. It does not resolve Task 05's intended VS Code
+presenter gate, prove deployed System-key security, or claim support for
+protocol `2026-07-28`.
+
 ## Local validation boundary
 
 `dotnet restore`, `dotnet build`, `dotnet test`, and `dotnet format` operate

@@ -10,7 +10,7 @@ namespace PizzaOps.UnitTests;
 public sealed class TableReadFailureTests
 {
     [Fact]
-    public async Task ExhaustedConnectionRetriesAreReportedAsUnavailableForBothReadPaths()
+    public async Task ExhaustedConnectionRetriesAreReportedAsUnavailableForAllReadPaths()
     {
         using var httpClient = new HttpClient(new FailingHandler());
         var clientOptions = new TableClientOptions
@@ -30,11 +30,15 @@ public sealed class TableReadFailureTests
             () => repository.GetAllAsync(CancellationToken.None));
         var eventsError = await Assert.ThrowsAsync<KitchenStorageException>(
             () => repository.GetLatestAsync(20, CancellationToken.None));
+        var ovenError = await Assert.ThrowsAsync<KitchenStorageException>(
+            () => repository.GetByIdAsync("oven-02", CancellationToken.None));
 
         Assert.Equal(KitchenStorageFailureKind.Unavailable, ovensError.FailureKind);
         Assert.Equal(KitchenStorageFailureKind.Unavailable, eventsError.FailureKind);
+        Assert.Equal(KitchenStorageFailureKind.Unavailable, ovenError.FailureKind);
         Assert.IsType<AggregateException>(ovensError.InnerException);
         Assert.IsType<AggregateException>(eventsError.InnerException);
+        Assert.IsType<AggregateException>(ovenError.InnerException);
     }
 
     private sealed class FailingHandler : HttpMessageHandler

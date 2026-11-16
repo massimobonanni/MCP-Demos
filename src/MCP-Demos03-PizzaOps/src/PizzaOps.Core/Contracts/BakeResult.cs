@@ -43,6 +43,14 @@ public sealed class BakeResult
     [JsonPropertyName("tolerance_c")]
     public int ToleranceC { get; }
 
+    /// <summary>The inclusive lower bound used for this observation.</summary>
+    [JsonPropertyName("minimum_passing_temperature_c")]
+    public int MinimumPassingTemperatureC => TargetTemperatureC - ToleranceC;
+
+    /// <summary>The inclusive upper bound used for this observation.</summary>
+    [JsonPropertyName("maximum_passing_temperature_c")]
+    public int MaximumPassingTemperatureC => TargetTemperatureC + ToleranceC;
+
     /// <summary>The typed bake outcome, separate from operation execution success.</summary>
     [JsonIgnore]
     public BakeOutcome Outcome { get; }

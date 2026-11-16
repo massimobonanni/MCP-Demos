@@ -156,7 +156,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 04 | Implement authenticated deterministic reset and status | Done |
 | 05 | Prove real MCP discovery and the two read tools | Blocked |
 | 06 | Deliver the ETag-protected temperature repair and rejection | Done |
-| 07 | Deliver the deterministic test-bake tool | ToDo |
+| 07 | Deliver the deterministic test-bake tool | Done |
 | 08 | Expose the read-only dashboard API and health checks | ToDo |
 | 09 | Build the live, accessible Blazor dashboard | ToDo |
 | 10 | Complete telemetry and local reliability verification | ToDo |
@@ -351,6 +351,22 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 - Missing oven/recipe fails explicitly; all successful test executions use `TEST_COMPLETED`, even when the pizza is not PASS.
 - Bake does not update the oven entity. Event-append failure is an explicit warning.
 - End-to-end test reaches all four tools, with no additional capabilities exposed.
+
+**Acceptance evidence (2026-11-16):** `BakeTestService` and the official
+`BakeTestPizza` trigger use the persisted oven observation and immutable recipe
+bounds. Focused unit/contract tests passed (67 tests), including inclusive
+boundaries, missing/unknown inputs, repeated observations, unavailable reads,
+and failed/uncertain/cancelled event appends. The real local Functions host and
+Azurite passed all three `FullyQualifiedName~Mcp` wire tests: exactly the four
+approved tools; empty resource, resource-template, and prompt catalogs; the
+450 C BURNT -> repair -> 320 C PASS story; boundary outcomes; unchanged oven
+fields, timestamp, and ETag; distinct repeated test events; and an explicit
+warning when the local event table is unavailable. The extension advertises
+generic resource/prompt support but exposes no entries or admin tools.
+Changed-file formatting/analyzer verification passed. See the scoped
+[`README.md`](../../src/MCP-Demos03-PizzaOps/README.md) for reproduction and
+[`compatibility.md`](../../src/MCP-Demos03-PizzaOps/docs/compatibility.md) for
+the unchanged presenter/protocol limitation; Task 05 is not unblocked here.
 
 **Implementation prompt:**
 

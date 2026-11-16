@@ -12,6 +12,7 @@ var host = new HostBuilder()
         services.AddSingleton<IRecipeCatalog>(PizzaRecipeCatalog.Instance);
         services.AddSingleton<RecipeReadService>();
         services.AddSingleton<ITemperatureChangeService, TemperatureChangeService>();
+        services.AddSingleton<IBakeTestService, BakeTestService>();
     })
     .Build();
 

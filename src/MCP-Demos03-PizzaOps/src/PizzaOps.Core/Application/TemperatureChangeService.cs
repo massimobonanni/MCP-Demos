@@ -173,32 +173,10 @@ public sealed class TemperatureChangeService : ITemperatureChangeService
             changeEventWrite.Warnings);
     }
 
-    private async Task<EventWriteResult> AppendEventAsync(
+    private Task<EventWriteResult> AppendEventAsync(
         KitchenEvent kitchenEvent,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await eventRepository.AppendAsync(kitchenEvent, cancellationToken);
-            return new EventWriteResult(true, []);
-        }
-        catch (OperationCanceledException)
-        {
-            return new EventWriteResult(
-                false,
-                ["EVENT_WRITE_OUTCOME_UNKNOWN: Event append was cancelled; whether it was recorded is unknown."]);
-        }
-        catch (KitchenStorageException exception)
-        {
-            return exception.FailureKind == KitchenStorageFailureKind.OutcomeUnknown
-                ? new EventWriteResult(
-                    false,
-                    ["EVENT_WRITE_OUTCOME_UNKNOWN: Whether the event was recorded is unknown."])
-                : new EventWriteResult(
-                    false,
-                    ["EVENT_WRITE_FAILED: The event could not be recorded."]);
-        }
-    }
+        CancellationToken cancellationToken) =>
+        BestEffortEventWriter.AppendAsync(eventRepository, kitchenEvent, cancellationToken);
 
     private static KitchenEvent CreateEvent(
         DateTimeOffset timestampUtc,
@@ -265,6 +243,4 @@ public sealed class TemperatureChangeService : ITemperatureChangeService
                 "The temperature could not be written to storage.",
                 correlationId)
         };
-
-    private sealed record EventWriteResult(bool Recorded, IReadOnlyList<string> Warnings);
 }

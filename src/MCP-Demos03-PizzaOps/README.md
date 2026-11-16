@@ -24,10 +24,11 @@ Azurite in Development.
 Functions, Dashboard, and DemoAdmin may depend on Core and Storage; Dashboard
 and DemoAdmin do not reference Functions.
 
-## Local MCP read tools
+## Local MCP tools
 
-The Functions app exposes `get_ovens_status` and `get_pizza_recipe` using the
-official MCP extension. The local protocol compatibility gate remains open; see
+The Functions app exposes exactly `get_ovens_status`, `get_pizza_recipe`,
+`set_oven_temperature`, and `bake_test_pizza` using the official MCP extension.
+There are no MCP resources, prompts, or admin tools. The presenter compatibility gate remains open; see
 [`docs\compatibility.md`](docs/compatibility.md) before relying on this slice.
 The deployed webhook is configured with System authorization. Core Tools'
 local behavior is not a test of the Azure system key.
@@ -56,9 +57,27 @@ $env:PIZZAOPS_MCP_TESTS = "true"
 dotnet test .\tests\PizzaOps.IntegrationTests\PizzaOps.IntegrationTests.csproj --filter "FullyQualifiedName~Mcp"
 ```
 
-These tests target that exact local endpoint. The temperature test resets the
-local Azurite kitchen before and after its mutations; MCP tests are skipped
-unless explicitly enabled.
+These tests target that exact local endpoint. The temperature/bake tests reset
+the local Azurite kitchen before and after their mutations. The bake test also
+temporarily deletes the local events table to verify event-write failure, then
+restores it through reset. Run them only against a disposable local emulator
+with no other callers. MCP tests are skipped unless explicitly enabled.
+
+`bake_test_pizza` requires string `oven_id` and `pizza_type` arguments and rejects
+extra fields. It reads the current persisted oven once and uses the immutable
+recipe bounds, without delays, oven writes, or ETag changes. The response includes
+the observed `oven_temperature_c`, recipe target/tolerance, inclusive minimum
+and maximum passing temperatures, and `result`. Both a burnt pizza and an
+undercooked pizza are completed tests: `success: true`, `code: TEST_COMPLETED`,
+with `result: BURNT` or `UNDERCOOKED`; only temperatures inside the inclusive
+bounds yield `PASS`. Invalid/missing inputs or unreadable ovens do not fabricate
+a bake result.
+
+Each completed test attempts one `TEST_BAKE` event containing the observed
+temperature, recipe target/bounds, and result. Repeated bakes can record separate
+events but never alter the oven. Event append failure preserves `TEST_COMPLETED`
+and its observation, with `event_recorded: false` and an `EVENT_WRITE_FAILED`
+warning (or `EVENT_WRITE_OUTCOME_UNKNOWN` when persistence is uncertain).
 
 ## Prerequisites
 
