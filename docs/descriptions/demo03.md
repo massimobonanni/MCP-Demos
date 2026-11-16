@@ -518,6 +518,12 @@ This is **application-level JSON content** returned from MCP tools, not a replac
 
 **Deliberate choice:** Do not rely exclusively on `minimum`/`maximum` schema keywords to prevent the 600°C call. The application service must receive/validate the attempt so that it can visibly reject it. Schema annotations may supplement, but never replace, business validation.
 
+The MCP schema intentionally does not constrain `target_temperature_c` with
+`minimum` or `maximum`. The Function rejects unexpected argument keys and
+malformed values; Core performs the domain range check after confirming the
+oven exists. A 600°C request therefore reaches domain validation and records a
+safe rejection without updating any oven field.
+
 **Processing (must occur server-side):**
 
 1. Validate argument shape, oven ID format, and temperature type.
@@ -538,10 +544,14 @@ This is **application-level JSON content** returned from MCP tools, not a replac
   "message": "Oven 02 changed from 450°C to 320°C; status is HEALTHY.",
   "data": {
     "oven_id": "oven-02",
+    "requested_temperature_c": 320,
     "previous_temperature_c": 450,
     "current_temperature_c": 320,
-    "health": "HEALTHY"
-  }
+    "health": "HEALTHY",
+    "updated_at_utc": "2026-11-16T12:00:00+00:00",
+    "state_changed": true
+  },
+  "event_recorded": true
 }
 ```
 
@@ -551,17 +561,23 @@ This is **application-level JSON content** returned from MCP tools, not a replac
 {
   "success": false,
   "code": "TEMPERATURE_OUT_OF_RANGE",
-  "message": "Rejected: commanded temperatures must be between 200°C and 350°C.",
+  "message": "Commanded temperatures must be between 200°C and 350°C.",
   "data": {
     "oven_id": "oven-02",
     "requested_temperature_c": 600,
+    "previous_temperature_c": 450,
+    "current_temperature_c": 450,
+    "health": "CRITICAL",
+    "updated_at_utc": "2026-11-16T12:00:00+00:00",
     "state_changed": false
-  }
+  },
+  "event_recorded": true
 }
 ```
 
-**Other failures:** `OVEN_NOT_FOUND`, `INVALID_ARGUMENT`, `CONCURRENT_UPDATE`, `STORAGE_UNAVAILABLE`.  
-**Authorization:** Write-capable MCP access is required. For MVP, possession of the endpoint key grants the ability to request calls; domain safety policy remains mandatory. Later: authenticated principal + `oven.write` permission.  
+**Other failures:** `OVEN_NOT_FOUND`, `INVALID_ARGUMENT`, `CONCURRENT_UPDATE`, `STORAGE_UNAVAILABLE`, and `STORAGE_OUTCOME_UNKNOWN` (never retry automatically). If a post-commit event append fails, the result reports the committed temperature with `event_recorded: false` and an `EVENT_WRITE_FAILED` or `EVENT_WRITE_OUTCOME_UNKNOWN` warning.
+
+**Authorization:** Write-capable MCP access is required. For MVP, possession of the endpoint key grants the ability to request calls; domain safety policy remains mandatory. Later: authenticated principal + `oven.write` permission.
 **Idempotency:** Setting the same target value is safe; avoid duplicate change events when it is a no-op.  
 **Visible dashboard effect:** Oven 02 turns from critical/red to healthy/green; event appears. For 600°C rejection, unchanged temperature plus visible blocked-event entry.  
 **Key tests:** Valid decrease from 450 to 320; lower/upper boundaries; 199/351/600 rejected; nonexistent oven; no-write on rejection; concurrent writer; no-op repeat; excessively long reason; storage failure.

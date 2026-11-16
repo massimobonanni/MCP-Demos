@@ -87,6 +87,42 @@ public sealed class TableKitchenRepositoryTests : IAsyncLifetime
     }
 
     [AzuriteFact]
+    public async Task TemperaturePolicyRejectionPreservesEveryPersistedOvenFieldAndEtag()
+    {
+        await ovensTable.AddEntityAsync(new TableEntity(options.PartitionKey, "oven-02")
+        {
+            [nameof(Oven.DisplayName)] = "Oven 02",
+            [nameof(Oven.TemperatureC)] = 450,
+            [nameof(Oven.UpdatedAtUtc)] = DateTimeOffset.UtcNow,
+            [nameof(Oven.LastAction)] = "original action",
+            ["OperationalMarker"] = "preserve-me"
+        });
+        var before = await ovensTable.GetEntityAsync<TableEntity>(options.PartitionKey, "oven-02");
+        var service = new TemperatureChangeService(repository, repository, TimeProvider.System);
+
+        var result = await service.SetTemperatureAsync(
+            "oven-02",
+            600,
+            "untrusted reason",
+            null,
+            CancellationToken.None);
+
+        var after = await ovensTable.GetEntityAsync<TableEntity>(options.PartitionKey, "oven-02");
+        Assert.False(result.Success);
+        Assert.Equal(ResultCodes.TemperatureOutOfRange, result.Code);
+        Assert.Equal(before.Value.ETag, after.Value.ETag);
+        Assert.Equal(before.Value.Keys.Order(StringComparer.Ordinal), after.Value.Keys.Order(StringComparer.Ordinal));
+        foreach (var (property, value) in before.Value)
+        {
+            Assert.Equal(value, after.Value[property]);
+        }
+
+        Assert.Equal(
+            KitchenEventType.TemperatureRejected,
+            Assert.Single(await repository.GetLatestAsync(20, CancellationToken.None)).EventType);
+    }
+
+    [AzuriteFact]
     public async Task LatestEventsArePartitionScopedNewestFirstAndCappedAtTwentyAcrossPages()
     {
         var otherPartitionOptions = new PizzaOpsTableOptions

@@ -5,6 +5,7 @@ using ModelContextProtocol.Protocol;
 
 namespace PizzaOps.IntegrationTests;
 
+[Collection("MCP endpoint")]
 public sealed class McpReadToolsTests
 {
     [McpFact]
@@ -20,7 +21,7 @@ public sealed class McpReadToolsTests
 
         var tools = await client.ListToolsAsync();
         Assert.Equal(
-            ["get_ovens_status", "get_pizza_recipe"],
+            ["get_ovens_status", "get_pizza_recipe", "set_oven_temperature"],
             tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
         Assert.All(tools, tool => Assert.False(string.IsNullOrWhiteSpace(tool.Description)));
         var statusSchema = tools.Single(tool => tool.Name == "get_ovens_status").JsonSchema;
@@ -33,6 +34,19 @@ public sealed class McpReadToolsTests
         Assert.Single(recipeSchema.GetProperty("properties").EnumerateObject());
         Assert.Equal("string", recipeSchema.GetProperty("properties").GetProperty("pizza_type").GetProperty("type").GetString());
         Assert.Equal("pizza_type", Assert.Single(recipeSchema.GetProperty("required").EnumerateArray()).GetString());
+
+        var temperatureSchema = tools.Single(tool => tool.Name == "set_oven_temperature").JsonSchema;
+        var temperatureProperties = temperatureSchema.GetProperty("properties");
+        Assert.Equal(3, temperatureProperties.EnumerateObject().Count());
+        Assert.Equal("string", temperatureProperties.GetProperty("oven_id").GetProperty("type").GetString());
+        Assert.Equal("integer", temperatureProperties.GetProperty("target_temperature_c").GetProperty("type").GetString());
+        Assert.False(temperatureProperties.GetProperty("target_temperature_c").TryGetProperty("minimum", out _));
+        Assert.False(temperatureProperties.GetProperty("target_temperature_c").TryGetProperty("maximum", out _));
+        Assert.Equal(
+            ["oven_id", "target_temperature_c"],
+            temperatureSchema.GetProperty("required").EnumerateArray()
+                .Select(argument => argument.GetString())
+                .Order(StringComparer.Ordinal));
 
         using var status = await CallAsync(client, "get_ovens_status", []);
         Assert.True(status.RootElement.GetProperty("success").GetBoolean());

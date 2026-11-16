@@ -155,7 +155,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 03 | Implement Table Storage and shared read projection | Done |
 | 04 | Implement authenticated deterministic reset and status | Done |
 | 05 | Prove real MCP discovery and the two read tools | Blocked |
-| 06 | Deliver the ETag-protected temperature repair and rejection | ToDo |
+| 06 | Deliver the ETag-protected temperature repair and rejection | Done |
 | 07 | Deliver the deterministic test-bake tool | ToDo |
 | 08 | Expose the read-only dashboard API and health checks | ToDo |
 | 09 | Build the live, accessible Blazor dashboard | ToDo |

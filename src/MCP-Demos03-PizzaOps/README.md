@@ -48,16 +48,17 @@ func start
 
 The Streamable HTTP endpoint is
 `http://127.0.0.1:7071/runtime/webhooks/mcp`. With the host running and the
-canonical kitchen freshly reset, run the opt-in C# wire-contract test from the
+canonical kitchen freshly reset, run the opt-in C# wire-contract tests from the
 solution directory:
 
 ```powershell
 $env:PIZZAOPS_MCP_TESTS = "true"
-dotnet test .\tests\PizzaOps.IntegrationTests\PizzaOps.IntegrationTests.csproj --filter "FullyQualifiedName~McpReadToolsTests"
+dotnet test .\tests\PizzaOps.IntegrationTests\PizzaOps.IntegrationTests.csproj --filter "FullyQualifiedName~Mcp"
 ```
 
-This test targets that exact local endpoint and assumes the canonical reset
-state. It is skipped unless explicitly enabled.
+These tests target that exact local endpoint. The temperature test resets the
+local Azurite kitchen before and after its mutations; MCP tests are skipped
+unless explicitly enabled.
 
 ## Prerequisites
 

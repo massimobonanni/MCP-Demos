@@ -11,6 +11,7 @@ var host = new HostBuilder()
         services.AddPizzaOpsStorage(context.Configuration, context.HostingEnvironment.EnvironmentName);
         services.AddSingleton<IRecipeCatalog>(PizzaRecipeCatalog.Instance);
         services.AddSingleton<RecipeReadService>();
+        services.AddSingleton<ITemperatureChangeService, TemperatureChangeService>();
     })
     .Build();
 

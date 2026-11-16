@@ -41,7 +41,7 @@ public sealed class OperationResult<T>
     [JsonPropertyName("message")]
     public string Message { get; }
 
-    /// <summary>Operation data, absent when execution or validation failed.</summary>
+    /// <summary>Operation data, including safe state details for policy rejections.</summary>
     [JsonPropertyName("data")]
     public T? Data { get; }
 
@@ -52,7 +52,7 @@ public sealed class OperationResult<T>
 
     /// <summary>
     /// Whether the associated event was appended. Null means no event was attempted;
-    /// false means the primary operation completed or was rejected but the event failed.
+    /// false means the append was not confirmed; warnings distinguish failure from unknown outcome.
     /// </summary>
     [JsonPropertyName("event_recorded")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -94,4 +94,14 @@ public static class OperationResultFactory
         bool? eventRecorded = null,
         IEnumerable<string>? warnings = null) =>
         OperationResult<T>.Create(false, code, message, default, correlationId, eventRecorded, warnings);
+
+    /// <summary>Creates a failed operation with safe details about an unchanged state.</summary>
+    public static OperationResult<T> FailedWithData<T>(
+        string code,
+        string message,
+        T data,
+        string? correlationId = null,
+        bool? eventRecorded = null,
+        IEnumerable<string>? warnings = null) =>
+        OperationResult<T>.Create(false, code, message, data, correlationId, eventRecorded, warnings);
 }
