@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "PizzaOps.Functions": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "AZURE_FUNCTIONS_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+        "PizzaOps__TableStorage__Mode": "Azurite",
+        "PizzaOps__TableStorage__AzuriteConnectionString": "UseDevelopmentStorage=true"
+      }
+    }
+  }
+}

@@ -34,7 +34,18 @@ The deployed webhook is configured with System authorization. Core Tools'
 local behavior is not a test of the Azure system key.
 
 Start Azurite as described below, then use the explicit operator reset to seed
-the kitchen. In a separate PowerShell session, configure and start the host:
+the kitchen. From this solution directory, start the host with its local
+Development launch profile:
+
+```powershell
+dotnet run --project .\src\PizzaOps.Functions
+```
+
+The profile configures the isolated worker and Azurite for local development;
+it contains no Azure credentials and is not used for deployment. To supply
+different settings, use `dotnet run --no-launch-profile` and configure the
+environment explicitly. Alternatively, in a separate PowerShell session,
+configure and start Core Tools directly:
 
 ```powershell
 cd .\src\PizzaOps.Functions
