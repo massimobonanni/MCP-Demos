@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using PizzaOps.Core.Application;
 using PizzaOps.Core.Contracts;
 using PizzaOps.Core.Domain;
+using PizzaOps.DemoAdmin;
 using PizzaOps.Storage;
 using PizzaOps.Storage.Persistence;
 
@@ -12,6 +13,7 @@ namespace PizzaOps.IntegrationTests;
 
 public sealed class TableKitchenRepositoryTests : IAsyncLifetime
 {
+    private static readonly int[] CanonicalTemperatures = [320, 450, 300];
     private readonly TableServiceClient tableServiceClient;
     private readonly TableClient ovensTable;
     private readonly TableClient eventsTable;
@@ -185,6 +187,64 @@ public sealed class TableKitchenRepositoryTests : IAsyncLifetime
         Assert.False(await TableExistsAsync(options.EventsTableName));
     }
 
+    [AzuriteFact]
+    public async Task ResetRepeatsRecoversAfterPartialFailureAndLeavesOtherPartitionUntouched()
+    {
+        var otherPartitionOptions = new PizzaOpsTableOptions
+        {
+            Mode = "Azurite",
+            AzuriteConnectionString = options.AzuriteConnectionString,
+            OvensTableName = options.OvensTableName,
+            EventsTableName = options.EventsTableName,
+            PartitionKey = "other-kitchen"
+        };
+        var otherRepository = new TableKitchenRepository(
+            tableServiceClient,
+            Options.Create(otherPartitionOptions));
+        await AddCanonicalOvensAsync();
+        await repository.AppendAsync(
+            CreateEvent("old-target-event", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await otherRepository.CreateOrReplaceOvenAsync(
+            "oven-01",
+            "Other oven",
+            275,
+            DateTimeOffset.UtcNow,
+            "untouched",
+            CancellationToken.None);
+        await otherRepository.AppendAsync(
+            CreateEvent("other-partition-event", DateTimeOffset.UtcNow.AddSeconds(1)),
+            CancellationToken.None);
+
+        var reset = new KitchenResetService(
+            repository,
+            repository,
+            new FailOnceAfterDeleteMaintenance(maintenance),
+            TimeProvider.System);
+
+        var failure = await Assert.ThrowsAsync<KitchenResetException>(
+            () => reset.ResetAsync(CancellationToken.None));
+
+        Assert.Equal("partition cleanup", failure.Stage);
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(275, (await otherRepository.GetByIdAsync("oven-01", CancellationToken.None))?.TemperatureC);
+        Assert.Equal(
+            "other-partition-event",
+            (await otherRepository.GetLatestAsync(20, CancellationToken.None)).Single().EventId);
+
+        await reset.ResetAsync(CancellationToken.None);
+        await AssertCanonicalResetAsync();
+        await reset.ResetAsync(CancellationToken.None);
+        await AssertCanonicalResetAsync();
+
+        Assert.Equal(
+            275,
+            (await otherRepository.GetByIdAsync("oven-01", CancellationToken.None))?.TemperatureC);
+        Assert.Equal(
+            "other-partition-event",
+            (await otherRepository.GetLatestAsync(20, CancellationToken.None)).Single().EventId);
+    }
+
     private KitchenReadService CreateReadService() =>
         new(repository, repository, TimeProvider.System);
 
@@ -202,6 +262,21 @@ public sealed class TableKitchenRepositoryTests : IAsyncLifetime
         await AddOvenAsync("oven-01", 320);
         await AddOvenAsync("oven-02", 450);
         await AddOvenAsync("oven-03", 300);
+    }
+
+    private async Task AssertCanonicalResetAsync()
+    {
+        var ovens = await repository.GetAllAsync(CancellationToken.None);
+        Assert.Equal(3, ovens.Count);
+        Assert.Equal(
+            CanonicalTemperatures,
+            ovens.OrderBy(oven => oven.OvenId, StringComparer.Ordinal).Select(oven => oven.TemperatureC));
+        Assert.All(ovens, oven => Assert.Equal("RESET", oven.LastAction));
+
+        var events = await repository.GetLatestAsync(20, CancellationToken.None);
+        Assert.Single(events);
+        Assert.Equal(KitchenEventType.Reset, events[0].EventType);
+        Assert.Equal(KitchenEventOutcome.Success, events[0].Outcome);
     }
 
     private static KitchenEvent CreateEvent(string eventId, DateTimeOffset timestampUtc) =>
@@ -234,5 +309,41 @@ public sealed class TableKitchenRepositoryTests : IAsyncLifetime
         }
 
         return false;
+    }
+
+    private sealed class FailOnceAfterDeleteMaintenance(IKitchenTableMaintenance inner)
+        : IKitchenTableMaintenance
+    {
+        private bool hasFailed;
+
+        public Task EnsureTablesAsync(CancellationToken cancellationToken) =>
+            inner.EnsureTablesAsync(cancellationToken);
+
+        public async Task DeleteKitchenDataAsync(CancellationToken cancellationToken)
+        {
+            await inner.DeleteKitchenDataAsync(cancellationToken);
+            if (!hasFailed)
+            {
+                hasFailed = true;
+                throw new KitchenStorageException(
+                    KitchenStorageFailureKind.Unavailable,
+                    "Injected failure after partition cleanup.");
+            }
+        }
+
+        public Task<Oven> CreateOrReplaceOvenAsync(
+            string ovenId,
+            string displayName,
+            int temperatureC,
+            DateTimeOffset updatedAtUtc,
+            string? lastAction,
+            CancellationToken cancellationToken) =>
+            inner.CreateOrReplaceOvenAsync(
+                ovenId,
+                displayName,
+                temperatureC,
+                updatedAtUtc,
+                lastAction,
+                cancellationToken);
     }
 }

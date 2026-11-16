@@ -153,7 +153,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 01 | Establish the .NET 10 solution and validation baseline | Done |
 | 02 | Implement domain rules and stable application contracts | Done |
 | 03 | Implement Table Storage and shared read projection | Done |
-| 04 | Implement authenticated deterministic reset and status | ToDo |
+| 04 | Implement authenticated deterministic reset and status | Done |
 | 05 | Prove real MCP discovery and the two read tools | ToDo |
 | 06 | Deliver the ETag-protected temperature repair and rejection | ToDo |
 | 07 | Deliver the deterministic test-bake tool | ToDo |

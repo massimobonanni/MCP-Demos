@@ -1,9 +1,10 @@
 # PizzaOps
 
 PizzaOps is a scoped .NET 10 solution for a simulated pizzeria demonstration.
-The solution currently contains the Core domain and contracts plus the
-Azure Table Storage adapter and shared read projection. MCP tools, operator
-reset, and dashboard endpoints/components are separate later tasks.
+It contains the Core domain and contracts, Azure Table Storage adapter, shared
+read projection, and a separately authorized operator reset/status utility.
+MCP tools and dashboard endpoints/components are implemented as separate
+projects.
 
 ## Projects
 
@@ -13,7 +14,7 @@ reset, and dashboard endpoints/components are separate later tasks.
 | `PizzaOps.Storage` | Storage adapter boundary |
 | `PizzaOps.Functions` | Azure Functions isolated-worker MCP host |
 | `PizzaOps.Dashboard` | Blazor Web App |
-| `PizzaOps.DemoAdmin` | Local operator command-line app |
+| `PizzaOps.DemoAdmin` | Azure-authorized/local-emulator operator command-line app |
 | `PizzaOps.UnitTests` | Core unit-test project |
 | `PizzaOps.IntegrationTests` | Storage and Functions integration-test project |
 
@@ -36,6 +37,73 @@ and DemoAdmin do not reference Functions.
 The Azurite endpoint, configuration, and emulator test instructions are in
 [`src\PizzaOps.Storage\README.md`](src/PizzaOps.Storage/README.md).
 
+## Operator reset and status
+
+`PizzaOps.DemoAdmin` is an explicit operator console only. It targets Azure
+through the signed-in operator identity or local Azurite through an explicit
+development profile. Reset is not exposed through MCP, HTTP, or the dashboard,
+and is never run during application startup or deployment.
+
+The required `--environment` selects exactly one `appsettings.<environment>.json`
+configuration file and one environment-variable prefix. No implicit default
+environment or shared appsettings file is loaded. Supply the `PizzaOps` options
+for that environment:
+
+```json
+{
+  "PizzaOps": {
+    "TableStorage": {
+      "Mode": "Azurite",
+      "AzuriteConnectionString": "UseDevelopmentStorage=true",
+      "OvensTableName": "PizzaOpsOvens",
+      "EventsTableName": "PizzaOpsEvents",
+      "PartitionKey": "main-kitchen"
+    },
+    "Admin": {
+      "DashboardUrl": "http://localhost:5000"
+    }
+  }
+}
+```
+
+Save that local-only example as `appsettings.Development.json`; Azurite is
+accepted only for the explicit `Development` environment. For Azure, use a
+separate file such as `appsettings.demo.json` with `Mode` set to `Azure`, the
+HTTPS `TableEndpoint`, table names, partition, and optional dashboard URL.
+Azure mode uses the signed-in Azure CLI operator identity (`az login`) and
+requires Table Storage data-plane authorization. `ManagedIdentityClientId`
+and connection strings are not accepted as Azure operator credentials. Instead
+of a JSON file, settings can be supplied with the environment-specific prefix,
+for example:
+
+```powershell
+$env:PIZZAOPS_DEVELOPMENT_PizzaOps__TableStorage__Mode = "Azurite"
+$env:PIZZAOPS_DEVELOPMENT_PizzaOps__TableStorage__AzuriteConnectionString = "UseDevelopmentStorage=true"
+$env:PIZZAOPS_DEMO_PizzaOps__TableStorage__Mode = "Azure"
+$env:PIZZAOPS_DEMO_PizzaOps__TableStorage__TableEndpoint = "https://<storage-account>.table.core.windows.net"
+```
+
+Run commands from this directory. Reset requires both the explicit quiescence
+acknowledgement and typing the complete non-secret target scope printed by the
+utility. Pause tool activity and drain in-flight calls before proceeding:
+
+```powershell
+dotnet run --project .\src\PizzaOps.DemoAdmin -- reset --environment Development --quiesced
+dotnet run --project .\src\PizzaOps.DemoAdmin -- status --environment Development
+dotnet run --project .\src\PizzaOps.DemoAdmin -- reset --help
+```
+
+The CLI uses `System.CommandLine`; use `--help` to display the available
+commands and options. `-e` is an alias for `--environment` and `-q` is an
+alias for `--quiesced`.
+
+Reset removes rows only in the configured kitchen partition, restores ovens at
+320/450/300 C, appends a single `RESET` event, then reads both tables back
+before reporting `READY`. A partial failure reports the failing stage and
+`NOT READY`; rerun reset after resolving the cause to converge. Status is
+read-only and reports readiness, temperatures, event availability, and the
+configured dashboard URL without displaying credentials.
+
 ## Build and validate
 
 Run commands from this directory so `global.json` selects the scoped .NET SDK:
@@ -56,8 +124,10 @@ current root `azure.yaml` has no PizzaOps services, so AZD packaging is not part
 of this scaffold task.
 
 The integration tests are opt-in and use a running Azurite Table service when
-explicitly enabled. The CI workflow restores, builds, and checks formatting
-without Azure login, provisioning, or deployment.
+explicitly enabled. The reset integration test covers repeatability, recovery
+after a failure immediately following partition cleanup, and isolation from
+another kitchen partition. The CI workflow restores, builds, and checks
+formatting without Azure login, provisioning, or deployment.
 
 The test projects use xUnit 2 with the VSTest runner (`Microsoft.NET.Test.Sdk`
 and `xunit.runner.visualstudio`); the command above is the solution-level test
