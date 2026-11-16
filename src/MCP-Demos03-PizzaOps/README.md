@@ -24,6 +24,41 @@ Azurite in Development.
 Functions, Dashboard, and DemoAdmin may depend on Core and Storage; Dashboard
 and DemoAdmin do not reference Functions.
 
+## Local MCP read tools
+
+The Functions app exposes `get_ovens_status` and `get_pizza_recipe` using the
+official MCP extension. The local protocol compatibility gate remains open; see
+[`docs\compatibility.md`](docs/compatibility.md) before relying on this slice.
+The deployed webhook is configured with System authorization. Core Tools'
+local behavior is not a test of the Azure system key.
+
+Start Azurite as described below, then use the explicit operator reset to seed
+the kitchen. In a separate PowerShell session, configure and start the host:
+
+```powershell
+cd .\src\PizzaOps.Functions
+$env:AZURE_FUNCTIONS_ENVIRONMENT = "Development"
+$env:DOTNET_ENVIRONMENT = "Development"
+$env:FUNCTIONS_WORKER_RUNTIME = "dotnet-isolated"
+$env:AzureWebJobsStorage = "UseDevelopmentStorage=true"
+$env:PizzaOps__TableStorage__Mode = "Azurite"
+$env:PizzaOps__TableStorage__AzuriteConnectionString = "UseDevelopmentStorage=true"
+func start
+```
+
+The Streamable HTTP endpoint is
+`http://127.0.0.1:7071/runtime/webhooks/mcp`. With the host running and the
+canonical kitchen freshly reset, run the opt-in C# wire-contract test from the
+solution directory:
+
+```powershell
+$env:PIZZAOPS_MCP_TESTS = "true"
+dotnet test .\tests\PizzaOps.IntegrationTests\PizzaOps.IntegrationTests.csproj --filter "FullyQualifiedName~McpReadToolsTests"
+```
+
+This test targets that exact local endpoint and assumes the canonical reset
+state. It is skipped unless explicitly enabled.
+
 ## Prerequisites
 
 - .NET 10 SDK. The scoped `global.json` selects SDK `10.0.404` and permits a

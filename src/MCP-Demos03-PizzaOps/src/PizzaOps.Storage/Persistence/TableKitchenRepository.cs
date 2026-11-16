@@ -78,6 +78,10 @@ public sealed class TableKitchenRepository :
         {
             throw Translate(exception, isWrite: false);
         }
+        catch (AggregateException exception) when (IsReadRetryFailure(exception))
+        {
+            throw TranslateReadRetryFailure(exception);
+        }
 
         return ovens;
     }
@@ -233,6 +237,10 @@ public sealed class TableKitchenRepository :
         catch (RequestFailedException exception)
         {
             throw Translate(exception, isWrite: false);
+        }
+        catch (AggregateException exception) when (IsReadRetryFailure(exception))
+        {
+            throw TranslateReadRetryFailure(exception);
         }
 
         return events;
@@ -461,6 +469,13 @@ public sealed class TableKitchenRepository :
 
         return new KitchenStorageException(failureKind, message, exception);
     }
+
+    private static bool IsReadRetryFailure(AggregateException exception) =>
+        exception.InnerExceptions.Count > 0 &&
+        exception.InnerExceptions.All(inner => inner is RequestFailedException);
+
+    private static KitchenStorageException TranslateReadRetryFailure(AggregateException exception) =>
+        new(KitchenStorageFailureKind.Unavailable, "The kitchen storage operation failed.", exception);
 
     private static KitchenStorageException InvalidData(string message, Exception? innerException = null) =>
         new(KitchenStorageFailureKind.InvalidData, message, innerException);

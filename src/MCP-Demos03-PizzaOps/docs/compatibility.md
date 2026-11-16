@@ -49,6 +49,47 @@ the MCP extension's 1.6.0 release. The sample also references the prerelease
 does not add it before any MCP trigger source is implemented, so its need is a
 compatibility gate for the trigger task rather than an assumed dependency.
 
+## Task 05 protocol gate: blocked
+
+On 2026-11-16, the existing Functions host's generated restore assets resolved
+`Microsoft.Azure.Functions.Extensions.Mcp` 1.6.0 and its dependency
+`ModelContextProtocol` 0.4.0-preview.3. The latter's
+[source at the package commit](https://github.com/modelcontextprotocol/csharp-sdk/blob/2da929914c2d7becbab0a51d1bda171aec4ce9e8/src/ModelContextProtocol.Core/McpSessionHandler.cs)
+lists `2025-06-18` as its latest supported protocol revision, alongside
+`2025-03-26` and `2024-11-05`; it does not list the plan's `2026-07-28` target.
+On 2026-11-16 the user accepted the older Functions protocol revision for now.
+With Core Tools 4.16.0 (Functions runtime
+4.1054.250.26428), Azurite 3.35.0, and a reset in-memory kitchen:
+
+- The official C# client `ModelContextProtocol` 2.1.0 negotiated `2025-06-18`
+  over Streamable HTTP and called both read tools. The opt-in
+  `McpReadToolsTests` asserts the schema, seeded status, recipes, and errors.
+- MCP Inspector 2.14.0 in legacy mode listed and called both tools. Its strict
+  schema check passed. In pinned modern mode it failed negotiation: the server
+  did not offer `2026-07-28` through `server/discover`.
+- Copilot CLI 1.0.106, configured with a temporary local HTTP server entry,
+  discovered two tools and successfully called both. Its negotiated protocol
+  revision was not captured. This CLI run does not establish compatibility of
+  the intended VS Code presenter configuration.
+
+The actual schemas contain `type: object`, `properties`, and `required`.
+Status has no properties and an empty required array; recipe has one required
+string property `pizza_type`. Neither schema advertises `additionalProperties`
+or a recipe enum. The extension returns a text content block containing the
+application JSON envelope. A missing required recipe argument is a protocol
+error. The binding coerces a numeric argument to a string, so the adapter
+checks the original invocation argument and returns `INVALID_ARGUMENT`.
+Initially, stopping Azurite exposed an aggregate retry exception instead of the
+application envelope. After mapping exhausted read retries to storage failure,
+Inspector returned `success: false` and `code: STORAGE_UNAVAILABLE` in a JSON
+text content block. A focused unit test also covers exhausted retries for oven
+and event reads.
+
+Task 05 remains blocked until the intended VS Code presenter configuration is
+verified. An attempted UI interaction was interrupted by active user input, so
+no VS Code discovery or call is claimed. Local execution does not prove deployed
+System-key security.
+
 `Directory.Solution.targets` includes the documented recursive
 `GenerateFunctionsExtensionProject` restore hook. This ensures restoring the
 solution generates the Functions extension project before build rather than

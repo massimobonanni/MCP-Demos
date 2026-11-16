@@ -56,10 +56,10 @@ Important differences from older examples:
 
 - Current native Copilot configuration uses `mcpServers` in its native user configuration or workspace-root `.mcp.json`. The older editor-managed `servers` plus `${input:...}` format is not interchangeable with it.
 - Native HTTP headers support `${VARIABLE_NAME}` references; the current harness does not bridge VS Code secret-input prompts or SecretStorage into those headers.
-- MCP 2026-07-28 changes protocol lifecycle behavior. Target that revision, but verify and record the actual version used by the pinned Functions extension, compliant test client, Inspector, and presenter Copilot harness. Do not invent handshake compatibility or implement JSON-RPC yourself.
+- MCP 2026-07-28 changes protocol lifecycle behavior. The user accepts an older Functions protocol revision for now; verify and record the actual version used by the pinned extension, compliant test client, Inspector, and presenter Copilot harness. Do not invent handshake compatibility or implement JSON-RPC yourself.
 - Flex Consumption runtime/deployment configuration differs from classic Functions hosting. Derive settings from current Flex guidance and schemas, not a copied classic-plan app-settings list.
 
-Exact SDK, Functions build SDK/worker, MCP extension, Core Tools, Inspector, test client, and Copilot versions remain implementation checkpoints. Prefer stable releases; document any unavoidable preview dependency and stop for approval if it changes the agreed architecture. An older compatible MCP revision is a documented deviation requiring agreement, not a silent downgrade.
+Exact SDK, Functions build SDK/worker, MCP extension, Core Tools, Inspector, test client, and Copilot versions remain implementation checkpoints. Prefer stable releases; document any unavoidable preview dependency and stop for approval if it changes the agreed architecture. The older MCP revision is an explicitly accepted temporary deviation, not a silent downgrade.
 
 ## 3. Architecture and implementation boundaries
 
@@ -154,7 +154,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 02 | Implement domain rules and stable application contracts | Done |
 | 03 | Implement Table Storage and shared read projection | Done |
 | 04 | Implement authenticated deterministic reset and status | Done |
-| 05 | Prove real MCP discovery and the two read tools | ToDo |
+| 05 | Prove real MCP discovery and the two read tools | Blocked |
 | 06 | Deliver the ETag-protected temperature repair and rejection | ToDo |
 | 07 | Deliver the deterministic test-bake tool | ToDo |
 | 08 | Expose the read-only dashboard API and health checks | ToDo |
@@ -164,6 +164,11 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 12 | Integrate AZD packaging and reproducible deployment automation | ToDo |
 | 13 | Verify the Azure deployment and presenter Copilot profile | ToDo |
 | 14 | Produce and rehearse the ten-minute presenter runbook | ToDo |
+
+Task 05 remains blocked: local legacy-protocol tests succeeded with the C#
+client, Inspector and Copilot CLI, and the user accepted the older revision
+for now. The intended VS Code presenter configuration has not been verified; see
+[`compatibility.md`](../../src/MCP-Demos03-PizzaOps/docs/compatibility.md).
 
 ### Phase map and gates
 
