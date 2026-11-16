@@ -151,7 +151,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | Task | Title | Status |
 | --- | --- | --- |
 | 01 | Establish the .NET 10 solution and validation baseline | Done |
-| 02 | Implement domain rules and stable application contracts | ToDo |
+| 02 | Implement domain rules and stable application contracts | Done |
 | 03 | Implement Table Storage and shared read projection | ToDo |
 | 04 | Implement authenticated deterministic reset and status | ToDo |
 | 05 | Prove real MCP discovery and the two read tools | ToDo |
