@@ -27,6 +27,9 @@ public static class ResultCodes
     /// <summary>A write may have committed, but its outcome could not be confirmed.</summary>
     public const string StorageOutcomeUnknown = "STORAGE_OUTCOME_UNKNOWN";
 
+    /// <summary>Persisted kitchen state is missing, incomplete, or malformed.</summary>
+    public const string KitchenStateInvalid = "KITCHEN_STATE_INVALID";
+
     /// <summary>The temperature changed successfully.</summary>
     public const string TemperatureUpdated = "TEMPERATURE_UPDATED";
 

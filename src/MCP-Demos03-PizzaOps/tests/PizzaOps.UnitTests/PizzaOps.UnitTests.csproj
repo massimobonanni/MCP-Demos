@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\PizzaOps.Storage\PizzaOps.Storage.csproj" />
     <ProjectReference Include="..\..\src\PizzaOps.Core\PizzaOps.Core.csproj" />
   </ItemGroup>
 

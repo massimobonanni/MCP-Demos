@@ -1,8 +1,9 @@
 # PizzaOps
 
 PizzaOps is a scoped .NET 10 solution for a simulated pizzeria demonstration.
-The solution is intentionally scaffold-only: no kitchen rules, MCP tools,
-storage operations, or Azure resources are implemented by this baseline.
+The solution currently contains the Core domain and contracts plus the
+Azure Table Storage adapter and shared read projection. MCP tools, operator
+reset, and dashboard endpoints/components are separate later tasks.
 
 ## Projects
 
@@ -16,7 +17,9 @@ storage operations, or Azure resources are implemented by this baseline.
 | `PizzaOps.UnitTests` | Core unit-test project |
 | `PizzaOps.IntegrationTests` | Storage and Functions integration-test project |
 
-`Core` has no project or package dependencies. `Storage` depends on `Core`.
+`Core` has no project or package dependencies. `Storage` depends on `Core` and
+uses Azure Table Storage with managed identity in Azure or explicitly selected
+Azurite in Development.
 Functions, Dashboard, and DemoAdmin may depend on Core and Storage; Dashboard
 and DemoAdmin do not reference Functions.
 
@@ -27,10 +30,11 @@ and DemoAdmin do not reference Functions.
 - Azure Functions Core Tools 4.x (4.0.7030 or later) only to run the Functions
   host locally. Building the solution does not require Core Tools.
 - Azure credentials or an Azure subscription are not required for the local
-  build and validation commands below.
+  build and unit tests. Real storage integration tests require Azurite; see
+  [`src\PizzaOps.Storage\README.md`](src/PizzaOps.Storage/README.md).
 
-Later storage-backed local scenarios will document their emulator prerequisites
-when those scenarios are implemented.
+The Azurite endpoint, configuration, and emulator test instructions are in
+[`src\PizzaOps.Storage\README.md`](src/PizzaOps.Storage/README.md).
 
 ## Build and validate
 
@@ -51,9 +55,9 @@ this `global.json` by walking up from the service directory. The repository's
 current root `azure.yaml` has no PizzaOps services, so AZD packaging is not part
 of this scaffold task.
 
-The test projects are currently scaffolding only and contain no behavior tests;
-their presence is not coverage evidence. The CI workflow restores, builds, and
-checks formatting without Azure login, provisioning, or deployment.
+The integration tests are opt-in and use a running Azurite Table service when
+explicitly enabled. The CI workflow restores, builds, and checks formatting
+without Azure login, provisioning, or deployment.
 
 The test projects use xUnit 2 with the VSTest runner (`Microsoft.NET.Test.Sdk`
 and `xunit.runner.visualstudio`); the command above is the solution-level test

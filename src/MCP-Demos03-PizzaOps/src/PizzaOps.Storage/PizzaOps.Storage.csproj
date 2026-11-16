@@ -7,6 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Data.Tables" />
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <ProjectReference Include="..\PizzaOps.Core\PizzaOps.Core.csproj" />
   </ItemGroup>
 
