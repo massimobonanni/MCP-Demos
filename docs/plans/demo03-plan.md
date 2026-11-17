@@ -158,7 +158,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 06 | Deliver the ETag-protected temperature repair and rejection | Done |
 | 07 | Deliver the deterministic test-bake tool | Done |
 | 08 | Expose the read-only dashboard API and health checks | Done |
-| 09 | Build the live, accessible Blazor dashboard | ToDo |
+| 09 | Build the live, accessible Blazor dashboard | Done |
 | 10 | Complete telemetry and local reliability verification | ToDo |
 | 11 | Extend Bicep with minimal PizzaOps resources and RBAC | ToDo |
 | 12 | Integrate AZD packaging and reproducible deployment automation | ToDo |
@@ -414,6 +414,17 @@ the unchanged presenter/protocol limitation; Task 05 is not unblocked here.
 - A failed refresh cannot display an unqualified live/healthy screen. Recovery clears stale status only after a successful read.
 - Tests cover no overlapping refreshes, cancellation/disposal and failed-first-load versus stale-after-success behavior.
 - Browser checks at 1920x1080 verify readable text, non-color status cues, reduced motion, no external asset dependencies and no editable controls.
+
+**Local verification (2026-11-17):** Implemented the Interactive Server audience screen
+over the existing read-only Core projection, plus serialized one-second refresh,
+bounded cancellation, tab/circuit recovery and explicit unavailable/stale/degraded
+states. All 24 focused dashboard lifecycle/API tests passed. Real isolated Azurite
+reset, repair, PASS and rejection were inspected at 1920x1080, along with storage
+failures, connection loss, encoded event text, bounded feed, local assets and
+reduced motion. Local event-timestamp-to-DOM observations were 953-979 ms; this is
+not stage-network evidence. Details and the repeatable test command are in the
+[PizzaOps README](../../src/MCP-Demos03-PizzaOps/README.md#live-audience-dashboard).
+Remote MCP-to-dashboard and stage verification remain Tasks 10 and 13.
 
 **Implementation prompt:**
 

@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using PizzaOps.Dashboard.Components;
 using PizzaOps.Dashboard.Endpoints;
+using PizzaOps.Dashboard.Presentation;
 using PizzaOps.Storage.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,6 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddScoped<DashboardCircuit>();
+builder.Services.AddScoped<CircuitHandler>(services => services.GetRequiredService<DashboardCircuit>());
+builder.Services.AddTransient<DashboardSession>();
 builder.Services.AddPizzaOpsReadOnlyStorage(builder.Configuration, builder.Environment.EnvironmentName);
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);

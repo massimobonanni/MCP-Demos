@@ -1,7 +1,184 @@
-﻿@page "/"
+@page "/"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IAsyncDisposable
+@using System.Globalization
+@using System.Text.Json
+@using PizzaOps.Core.Domain
+@using PizzaOps.Dashboard.Presentation
+@inject DashboardSession Session
+@inject DashboardCircuit Circuit
+@inject IJSRuntime JS
 
-<PageTitle>Home</PageTitle>
+<PageTitle>PizzaOps Control Center</PageTitle>
 
-<h1>Hello, world!</h1>
+<main class="dashboard">
+    <header class="masthead">
+        <div>
+            <p class="eyebrow">PIZZAOPS / KITCHEN TELEMETRY</p>
+            <h1>PizzaOps Control Center</h1>
+            <p class="subtitle">Live Azure demo <span aria-hidden="true">/</span> Simulated ovens. Real persisted state.</p>
+        </div>
+        <div class="connection" role="status" aria-live="polite">
+            <strong class="@(view.IsLive ? "live" : "attention")">@ConnectionLabel</strong>
+            <span>Read-only audience view</span>
+        </div>
+    </header>
 
-Welcome to your new app.
+    <section class="state-banner" aria-label="Data freshness" role="status">
+        @if (view.Snapshot is null)
+        {
+            <strong>@(view.HasFailed ? "KITCHEN UNAVAILABLE" : "LOADING KITCHEN")</strong>
+            <span>@(view.HasFailed ? "No snapshot available. Retrying while connected; no sample data is shown." : "Waiting for a persisted kitchen snapshot; no temperatures assumed.")</span>
+        }
+        else
+        {
+            <strong>@(view.IsLive ? (view.Snapshot.EventFeedAvailable ? "KITCHEN CONNECTED" : "DEGRADED / EVENTS UNAVAILABLE") : "STALE / NOT LIVE")</strong>
+            <span>@FreshnessMessage</span>
+        }
+    </section>
+
+    @if (view.Snapshot is { } snapshot)
+    {
+        <section class="summary" aria-label="Kitchen counts">
+            <div><strong>@snapshot.Ovens.Count</strong><span>ovens</span></div>
+            <div><strong>@snapshot.Ovens.Count(oven => oven.Health == OvenHealth.Healthy)</strong><span>healthy</span></div>
+            <div><strong>@snapshot.Ovens.Count(oven => oven.Health == OvenHealth.Critical)</strong><span>critical</span></div>
+            <p>Last successful read <time datetime="@snapshot.RetrievedAtUtc.ToString("O")">@Utc(snapshot.RetrievedAtUtc) UTC</time><br />
+                Snapshot age: @Math.Max(0, (int)(view.Age?.TotalSeconds ?? 0))s · Refresh: 1s</p>
+        </section>
+
+        <section class="ovens" aria-label="Persisted ovens">
+            @foreach (var oven in snapshot.Ovens)
+            {
+                <article class="oven @(oven.Health == OvenHealth.Critical ? "critical" : "healthy")" @key="oven.OvenId">
+                    <div class="oven-heading"><h2>@oven.DisplayName</h2><span class="health">@oven.Health.ToString().ToUpperInvariant()</span></div>
+                    <p class="temperature">@oven.TemperatureC<span>&#176;C</span></p>
+                    <p class="oven-caption">Persisted temperature @if (!view.IsLive) { <strong> / STALE</strong> }</p>
+                    <p class="oven-updated">Updated <time datetime="@oven.UpdatedAtUtc.ToString("O")">@Utc(oven.UpdatedAtUtc) UTC</time></p>
+                </article>
+            }
+        </section>
+
+        <section class="events" aria-labelledby="events-title">
+            <div class="section-heading">
+                <h2 id="events-title">Recent kitchen events</h2>
+                <span>@(snapshot.EventFeedAvailable ? "LATEST 20 / NEWEST FIRST / UTC" : "FEED DEGRADED / UNAVAILABLE")</span>
+            </div>
+            @if (!snapshot.EventFeedAvailable)
+            {
+                <p class="feed-warning" role="status">Recent events are unavailable. Oven readings are independent; no events or bake results are inferred.</p>
+            }
+            else if (snapshot.RecentEvents.Count == 0)
+            {
+                <p class="empty-feed">No persisted events in this kitchen.</p>
+            }
+            else
+            {
+                <ol class="event-feed" aria-label="Latest persisted events" tabindex="0">
+                    @foreach (var item in snapshot.RecentEvents)
+                    {
+                        <li @key="item.EventId">
+                            <time datetime="@item.TimestampUtc.ToString("O")">@Utc(item.TimestampUtc)</time>
+                            <span class="event-type">@JsonNamingPolicy.SnakeCaseUpper.ConvertName(item.EventType.ToString())</span>
+                            <span class="event-summary">@item.Summary</span>
+                            <strong class="outcome">@item.Outcome.ToString().ToUpperInvariant()</strong>
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+    }
+    else
+    {
+        <section class="waiting" aria-label="Waiting for storage">
+            <h2>@(view.HasFailed ? "Waiting for storage recovery" : "Connecting to the kitchen")</h2>
+            <p>The three oven cards appear only after a complete, successful read.</p>
+        </section>
+    }
+
+    <footer><span>MCP requests actions. Core enforces policy. Storage owns state.</span><span>No controls. No MCP calls. Display only.</span></footer>
+</main>
+
+@code {
+    private DashboardView view = new(null, false, false, false, false, DateTimeOffset.UtcNow);
+    private IJSObjectReference? module;
+    private IJSObjectReference? visibility;
+    private DotNetObjectReference<Home>? reference;
+    private Task? initialization;
+    private bool disposed;
+
+    private string ConnectionLabel => !view.IsConnected ? "CONNECTION LOST"
+        : !view.IsVisible ? "PAUSED / TAB HIDDEN"
+        : view.Snapshot is null ? (view.HasFailed ? "READ FAILED / RETRYING" : "CONNECTING")
+        : !view.IsLive ? (view.HasFailed ? "STALE / READ FAILED" : "STALE / REFRESHING")
+        : !view.Snapshot.EventFeedAvailable ? "CONNECTED / DEGRADED" : "LIVE / CONNECTED";
+
+    private string FreshnessMessage => !view.IsConnected ? "Browser connection lost. Last successful snapshot retained."
+        : !view.IsVisible ? "Refresh paused while this tab is hidden. A fresh read is required on return."
+        : !view.IsLive ? "Last successful snapshot retained. Waiting for a successful fresh read."
+        : !view.Snapshot!.EventFeedAvailable ? "Ovens refreshed successfully; the event feed could not be read."
+        : "Backend-computed health. Automatically refreshed from the shared read service.";
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return Task.CompletedTask;
+        }
+        initialization = InitializeAsync();
+        return initialization;
+    }
+
+    private async Task InitializeAsync()
+    {
+        Session.Changed += OnChanged;
+        Circuit.Changed += Session.SetConnected;
+        Session.SetConnected(Circuit.IsConnected);
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./visibility.js");
+        if (disposed) { return; }
+        reference = DotNetObjectReference.Create(this);
+        visibility = await module.InvokeAsync<IJSObjectReference>("observeVisibility", reference);
+        if (!disposed) { Session.Start(); }
+    }
+
+    /// <summary>Receives visibility only; all kitchen reads remain server-side.</summary>
+    [JSInvokable]
+    public void VisibilityChanged(bool visible)
+    {
+        if (!disposed) { Session.SetVisible(visible); }
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        if (!disposed)
+        {
+            view = Session.View;
+            StateHasChanged();
+        }
+    });
+
+    private static string Utc(DateTimeOffset value) => value.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        Session.Changed -= OnChanged;
+        Circuit.Changed -= Session.SetConnected;
+        await Session.DisposeAsync();
+        try
+        {
+            if (initialization is not null) { await initialization; }
+            if (visibility is not null)
+            {
+                await visibility.InvokeVoidAsync("dispose");
+                await visibility.DisposeAsync();
+            }
+            if (module is not null) { await module.DisposeAsync(); }
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser owns listener cleanup when its circuit is gone.
+        }
+        reference?.Dispose();
+    }
+}

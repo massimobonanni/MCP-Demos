@@ -109,6 +109,59 @@ Storage-backed requests time out after five seconds. All three responses use
 `Cache-Control: no-store`. The dashboard never initializes tables or connects
 to MCP; in Azure its managed identity needs only Table data read access.
 
+## Live audience dashboard
+
+The root page is a single-screen Interactive Server Blazor dashboard. It reads
+`IKitchenReadService` directly, just like the API, rather than calling loopback
+HTTP or MCP. Health labels and safe event summaries come from Core; the page
+does not implement temperature or bake policy. Template counter/weather pages
+and navigation are removed. All scripts, styles and fonts are local/system
+assets, with light/dark colors and reduced-motion support.
+
+One serialized worker consumes coalesced one-second refresh requests. A read
+has a five-second cancellation deadline; no second read starts before the first
+actually completes. Hidden tabs and disconnected circuits cancel the current
+read and pause further storage reads. Visibility and circuit recovery request
+an immediate fresh read, including visibility resynchronization after reconnect.
+Disposal cancels and drains the worker and timer and removes browser listeners.
+
+The display distinguishes:
+
+- **Loading / unavailable:** no fabricated oven cards or temperatures.
+- **Live / connected:** a successful snapshot no more than three seconds old.
+- **Stale / not live:** the last successful snapshot remains visible, labeled
+  stale, until another successful read. Oven health is not connection health.
+- **Connected / degraded:** authoritative ovens were read, but recent events
+  could not be read; no empty-success feed or inferred bake result is shown.
+- **Paused / connection lost:** hidden-tab messaging or the native Blazor
+  reconnect dialog prevents a disconnected screen from claiming to be live.
+
+Recent events are newest first, bounded to 20 by the existing read service,
+rendered as encoded text, and scrollable by keyboard within the event panel.
+Times are explicitly UTC. There are no kitchen-mutating controls; reconnect
+buttons only restore the browser connection.
+
+Run the focused xUnit/VSTest lifecycle and HTTP regression checks:
+
+```powershell
+dotnet test .\tests\PizzaOps.IntegrationTests\PizzaOps.IntegrationTests.csproj --filter "FullyQualifiedName~Dashboard"
+```
+
+Local Task 09 verification (2026-11-17): 24 tests passed, including virtual-time
+coverage of one-second cadence, slow reads/no overlap, timeouts, failed first
+load, retained stale data, event degradation, hidden-tab/circuit recovery,
+late canceled results and disposal. Browser inspection at 1920x1080 used real,
+isolated Azurite tables: reset 320/450/300, repair to 320, PASS, and rejection
+were displayed. The three story events took 953-979 ms from their persisted
+event timestamps to DOM observation in one local run (not an Azure/stage
+latency guarantee). Missing tables demonstrated unavailable, stale and
+event-only degraded states; stopping the host showed the native connection-loss
+dialog. Page Visibility/reconnect-event emulation verified paused reads and an
+immediate fresh recovery. Light/dark screenshots, a 20-row feed, literal markup
+as text, zero external asset requests, zero editable controls, and zero active
+animations under reduced motion were checked with no document overflow.
+Live Azure/MCP end-to-end and stage-network gates remain later plan tasks.
+
 ## Prerequisites
 
 - .NET 10 SDK. The scoped `global.json` selects SDK `10.0.404` and permits a
