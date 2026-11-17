@@ -32,10 +32,14 @@ public sealed class TableReadFailureTests
             () => repository.GetLatestAsync(20, CancellationToken.None));
         var ovenError = await Assert.ThrowsAsync<KitchenStorageException>(
             () => repository.GetByIdAsync("oven-02", CancellationToken.None));
+        var preWriteReadError = await Assert.ThrowsAsync<KitchenStorageException>(
+            () => repository.TrySetTemperatureAsync("oven-02", 320, null, DateTimeOffset.UtcNow,
+                new PizzaOps.Core.Domain.ConcurrencyToken("observed-etag"), CancellationToken.None));
 
         Assert.Equal(KitchenStorageFailureKind.Unavailable, ovensError.FailureKind);
         Assert.Equal(KitchenStorageFailureKind.Unavailable, eventsError.FailureKind);
         Assert.Equal(KitchenStorageFailureKind.Unavailable, ovenError.FailureKind);
+        Assert.Equal(KitchenStorageFailureKind.Unavailable, preWriteReadError.FailureKind);
         Assert.IsType<AggregateException>(ovensError.InnerException);
         Assert.IsType<AggregateException>(eventsError.InnerException);
         Assert.IsType<AggregateException>(ovenError.InnerException);

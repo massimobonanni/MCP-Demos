@@ -156,7 +156,7 @@ public sealed partial class DashboardSession(
                     }
                     catch (Exception exception)
                     {
-                        LogUnexpectedFailure(logger, exception);
+                        LogUnexpectedFailure(logger, exception.GetType().Name);
                         lock (gate)
                         {
                             if (!read.IsCancellationRequested)
@@ -211,8 +211,8 @@ public sealed partial class DashboardSession(
     [LoggerMessage(Level = LogLevel.Warning, Message = "Dashboard event feed is degraded.")]
     private static partial void LogFeedDegraded(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Unexpected dashboard read failure.")]
-    private static partial void LogUnexpectedFailure(ILogger logger, Exception exception);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Unexpected dashboard read failure: {ExceptionType}.")]
+    private static partial void LogUnexpectedFailure(ILogger logger, string exceptionType);
 }
 
 /// <summary>UI freshness is independent of backend-computed oven health.</summary>

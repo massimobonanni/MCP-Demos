@@ -1,4 +1,5 @@
 using Azure;
+using Azure.Core.Pipeline;
 using Azure.Data.Tables;
 using Azure.Data.Tables.Models;
 using Microsoft.Extensions.Options;
@@ -84,6 +85,54 @@ public sealed class TableKitchenRepositoryTests : IAsyncLifetime
         Assert.NotNull(committed.Oven);
         Assert.Equal(nameof(ConcurrencyToken), committed.Oven.Version.ToString());
         Assert.Equal(320, (await repository.GetByIdAsync("oven-02", CancellationToken.None))?.TemperatureC);
+    }
+
+    [AzuriteFact]
+    public async Task LostOrCancelledResponsesAfterRealCommitsRemainUnknownAndAreNeverReplayed()
+    {
+        await AddCanonicalOvensAsync();
+
+        foreach (var cancelled in new[] { false, true })
+        {
+            var before = (await repository.GetByIdAsync("oven-02", CancellationToken.None))!;
+            var target = cancelled ? 330 : 320;
+            using var handler = new LostWriteResponseHandler(cancelled);
+            using var http = new HttpClient(handler);
+            var clientOptions = new TableClientOptions { Transport = new HttpClientTransport(http) };
+            clientOptions.Retry.MaxRetries = 0;
+            var writeClient = new TableServiceClient(options.AzuriteConnectionString, clientOptions);
+            var faultedRepository = new TableKitchenRepository(
+                new TableStorageClients(tableServiceClient, writeClient), Options.Create(options));
+            var service = new TemperatureChangeService(faultedRepository, repository, TimeProvider.System);
+
+            var result = await service.SetTemperatureAsync("oven-02", target, null, "lost-response", CancellationToken.None);
+
+            Assert.False(result.Success);
+            Assert.Equal(ResultCodes.StorageOutcomeUnknown, result.Code);
+            Assert.Null(result.Data);
+            Assert.Null(result.EventRecorded);
+            Assert.Equal(1, handler.Writes);
+            var observed = (await repository.GetByIdAsync("oven-02", CancellationToken.None))!;
+            Assert.Equal(target, observed.TemperatureC);
+            Assert.NotEqual(before.Version, observed.Version);
+            Assert.Empty(await repository.GetLatestAsync(20, CancellationToken.None));
+        }
+    }
+
+    [AzuriteFact]
+    public async Task RealCompetingWriterMapsToConflictWithoutAnOptimisticSuccessEvent()
+    {
+        await AddCanonicalOvensAsync();
+        var service = new TemperatureChangeService(new CompetingWriter(repository), repository, TimeProvider.System);
+
+        var result = await service.SetTemperatureAsync("oven-02", 320, null, "conflict-trace", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(ResultCodes.ConcurrentUpdate, result.Code);
+        Assert.Equal(330, (await repository.GetByIdAsync("oven-02", CancellationToken.None))?.TemperatureC);
+        var rejected = Assert.Single(await repository.GetLatestAsync(20, CancellationToken.None));
+        Assert.Equal(KitchenEventType.TemperatureRejected, rejected.EventType);
+        Assert.Equal("conflict-trace", rejected.CorrelationId);
     }
 
     [AzuriteFact]
@@ -279,6 +328,44 @@ public sealed class TableKitchenRepositoryTests : IAsyncLifetime
         Assert.Equal(
             "other-partition-event",
             (await otherRepository.GetLatestAsync(20, CancellationToken.None)).Single().EventId);
+    }
+
+    private sealed class LostWriteResponseHandler(bool cancelled) : DelegatingHandler(new HttpClientHandler())
+    {
+        public int Writes { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = await base.SendAsync(request, cancellationToken);
+            if (request.Method == HttpMethod.Put && response.IsSuccessStatusCode)
+            {
+                Writes++;
+                response.Dispose();
+                if (cancelled)
+                {
+                    throw new OperationCanceledException("Injected cancellation after a real Table commit.");
+                }
+                throw new HttpRequestException("Injected response loss after a real Table commit.");
+            }
+            return response;
+        }
+    }
+
+    private sealed class CompetingWriter(IOvenRepository repository) : IOvenRepository
+    {
+        public Task<IReadOnlyList<Oven>> GetAllAsync(CancellationToken cancellationToken) => repository.GetAllAsync(cancellationToken);
+        public Task<Oven?> GetByIdAsync(string normalizedOvenId, CancellationToken cancellationToken) =>
+            repository.GetByIdAsync(normalizedOvenId, cancellationToken);
+
+        public async Task<OvenUpdateResult> TrySetTemperatureAsync(string normalizedOvenId, int targetTemperatureC,
+            string? lastAction, DateTimeOffset updatedAtUtc, ConcurrencyToken expectedVersion, CancellationToken cancellationToken)
+        {
+            var competing = await repository.TrySetTemperatureAsync(normalizedOvenId, 330, "competing update",
+                updatedAtUtc, expectedVersion, cancellationToken);
+            Assert.Equal(OvenUpdateStatus.Updated, competing.Status);
+            return await repository.TrySetTemperatureAsync(normalizedOvenId, targetTemperatureC, lastAction,
+                updatedAtUtc, expectedVersion, cancellationToken);
+        }
     }
 
     private KitchenReadService CreateReadService() =>

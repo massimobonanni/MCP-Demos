@@ -112,6 +112,10 @@ public static class StorageServiceCollectionExtensions
     {
         var options = new TableClientOptions();
         options.Retry.MaxRetries = maxRetries;
+        options.Retry.Delay = TimeSpan.FromMilliseconds(200);
+        options.Retry.MaxDelay = TimeSpan.FromSeconds(1);
+        options.Retry.NetworkTimeout = TimeSpan.FromSeconds(2);
+        options.Diagnostics.IsLoggingContentEnabled = false;
         return options;
     }
 }

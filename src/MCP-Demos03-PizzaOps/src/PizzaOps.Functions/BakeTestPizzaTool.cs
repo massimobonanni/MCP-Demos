@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
 using PizzaOps.Core.Application;
@@ -7,13 +6,8 @@ using PizzaOps.Core.Contracts;
 namespace PizzaOps.Functions;
 
 /// <summary>MCP adapter for deterministic test bakes.</summary>
-public sealed class BakeTestPizzaTool(IBakeTestService bakes)
+public sealed class BakeTestPizzaTool(IBakeTestService bakes, ToolExecution execution)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
-
     /// <summary>Tests the observed oven temperature without modifying the oven.</summary>
     [Function(nameof(BakeTestPizza))]
     public async Task<string> BakeTestPizza(
@@ -25,24 +19,22 @@ public sealed class BakeTestPizzaTool(IBakeTestService bakes)
         string ovenId,
         [McpToolProperty("pizza_type", "Recipe to test: margherita, marinara, or diavola.", true)]
         string pizzaType,
-        CancellationToken cancellationToken = default)
-    {
-        if (context.Arguments is not { Count: 2 } arguments ||
-            !arguments.TryGetValue("oven_id", out var rawOvenId) ||
-            rawOvenId is not string originalOvenId ||
-            !string.Equals(originalOvenId, ovenId, StringComparison.Ordinal) ||
-            !arguments.TryGetValue("pizza_type", out var rawPizzaType) ||
-            rawPizzaType is not string originalPizzaType ||
-            !string.Equals(originalPizzaType, pizzaType, StringComparison.Ordinal))
+        CancellationToken cancellationToken = default) =>
+        await execution.RunAsync("bake_test_pizza", mutation: false, async correlationId =>
         {
-            return JsonSerializer.Serialize(
-                OperationResultFactory.Failed<BakeResult>(
-                    ResultCodes.InvalidArgument,
-                    "Arguments must contain only string oven_id and pizza_type values."),
-                JsonOptions);
-        }
+            if (context.Arguments is not { Count: 2 } arguments ||
+                !arguments.TryGetValue("oven_id", out var rawOvenId) ||
+                rawOvenId is not string originalOvenId ||
+                !string.Equals(originalOvenId, ovenId, StringComparison.Ordinal) ||
+                !arguments.TryGetValue("pizza_type", out var rawPizzaType) ||
+                rawPizzaType is not string originalPizzaType ||
+                !string.Equals(originalPizzaType, pizzaType, StringComparison.Ordinal))
+            {
+                return OperationResultFactory.Failed<BakeResult>(
+                        ResultCodes.InvalidArgument,
+                        "Arguments must contain only string oven_id and pizza_type values.");
+            }
 
-        var result = await bakes.BakeAsync(ovenId, pizzaType, correlationId: null, cancellationToken);
-        return JsonSerializer.Serialize(result, JsonOptions);
-    }
+            return await bakes.BakeAsync(ovenId, pizzaType, correlationId, cancellationToken);
+        }, cancellationToken);
 }

@@ -3,6 +3,12 @@ namespace PizzaOps.Core.Contracts;
 /// <summary>Stable application result codes shared by tools and read surfaces.</summary>
 public static class ResultCodes
 {
+    /// <summary>The operation was cancelled without a confirmed command result.</summary>
+    public const string Cancelled = "CANCELLED";
+
+    /// <summary>An unexpected read failure was contained at the host boundary.</summary>
+    public const string InternalError = "INTERNAL_ERROR";
+
     /// <summary>Operation completed successfully.</summary>
     public const string Ok = "OK";
 

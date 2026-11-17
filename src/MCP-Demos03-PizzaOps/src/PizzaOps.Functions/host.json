@@ -1,5 +1,18 @@
 {
   "version": "2.0",
+  "logging": {
+    "logLevel": {
+      "default": "Warning",
+      "Host.Results": "Information",
+      "Host.Aggregator": "Information"
+    },
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": false
+      },
+      "enableDependencyTracking": false
+    }
+  },
   "extensions": {
     "mcp": {
       "serverName": "PizzaOps",

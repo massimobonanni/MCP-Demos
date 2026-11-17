@@ -35,7 +35,7 @@ internal static partial class KitchenEndpoints
         var result = await ReadAsync(kitchen, loggerFactory.CreateLogger("KitchenState"), cancellationToken);
         if (result?.Success != true || result.Data is null)
         {
-            return Unavailable(result?.Code);
+            return Unavailable(result?.Code, result?.CorrelationId);
         }
 
         var snapshot = result.Data;
@@ -53,7 +53,8 @@ internal static partial class KitchenEndpoints
                 item.TimestampUtc, JsonNamingPolicy.SnakeCaseUpper.ConvertName(item.EventType.ToString()), item.OvenId,
                 item.Summary, item.Outcome.ToString().ToUpperInvariant())).ToArray(),
             snapshot.EventFeedAvailable,
-            snapshot.EventFeedAvailable ? null : "Recent events are unavailable."));
+            snapshot.EventFeedAvailable ? null : "Recent events are unavailable.",
+            result.CorrelationId));
     }
 
     private static async Task<Results<Ok<HealthResponse>, ProblemHttpResult>> GetReadinessAsync(
@@ -66,7 +67,7 @@ internal static partial class KitchenEndpoints
         if (result?.Success != true || result.Data is null || !result.Data.EventFeedAvailable)
         {
             LogReadinessFailed(logger);
-            return Unavailable(result?.Code);
+            return Unavailable(result?.Code, result?.CorrelationId);
         }
 
         return TypedResults.Ok(new HealthResponse("ready"));
@@ -95,7 +96,7 @@ internal static partial class KitchenEndpoints
         }
     }
 
-    private static ProblemHttpResult Unavailable(string? code) =>
+    private static ProblemHttpResult Unavailable(string? code, string? correlationId) =>
         TypedResults.Problem(
             statusCode: StatusCodes.Status503ServiceUnavailable,
             title: "Kitchen state is unavailable.",
@@ -103,7 +104,8 @@ internal static partial class KitchenEndpoints
             {
                 ["code"] = code == ResultCodes.KitchenStateInvalid
                     ? ResultCodes.KitchenStateInvalid
-                    : ResultCodes.StorageUnavailable
+                    : ResultCodes.StorageUnavailable,
+                ["correlation_id"] = correlationId ?? System.Diagnostics.Activity.Current?.TraceId.ToHexString()
             });
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The recent kitchen event feed is unavailable.")]
@@ -125,7 +127,8 @@ internal sealed record KitchenStateResponse(
     IReadOnlyList<OvenResponse> Ovens,
     IReadOnlyList<KitchenEventResponse> Events,
     bool EventFeedAvailable,
-    string? EventFeedWarning);
+    string? EventFeedWarning,
+    string? CorrelationId);
 
 /// <summary>Public oven state without persistence versions or user-supplied reasons.</summary>
 internal sealed record OvenResponse(

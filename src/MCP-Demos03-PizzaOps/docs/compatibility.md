@@ -95,10 +95,9 @@ System-key security.
 solution generates the Functions extension project before build rather than
 triggering AZFW0108's restore-during-build fallback.
 
-Run the scaffolded test projects from the solution directory with
-`dotnet test .\PizzaOps.sln --no-build`. They currently contain no behavior
-tests, so this command confirms runner discovery only and is not coverage
-evidence.
+Run the test projects from the solution directory with
+`dotnet test .\PizzaOps.sln --no-build`. Emulator/MCP/destructive tests require
+their explicit opt-ins; a skipped test is not acceptance evidence.
 
 ## Task 07 local four-tool and bake verification
 
@@ -140,6 +139,42 @@ presenter gate, prove deployed System-key security, or claim support for
 protocol `2026-07-28`.
 
 ## Local validation boundary
+
+Task 10 retains the supported classic Application Insights integrations:
+WorkerService 2.23.0 plus Functions.Worker.ApplicationInsights 2.50.0 in
+Functions, and ApplicationInsights.AspNetCore 2.23.0 in Dashboard. The worker
+package's shipped README documents both registration calls and its replacement
+of worker-to-host log forwarding with direct SDK telemetry. There is no
+OpenTelemetry or second Azure Monitor exporter. These SDKs are enabled only by
+an explicit Application Insights connection string; the local harness disables
+export. Role initializers and safe polling/query-string processors run inside
+that SDK pipeline, not in the separate Functions host. Host role configuration
+therefore remains an explicit deployment setting.
+
+Focused tests verify parent Activity preservation, correlation in service/results,
+safe structured outcome/duration logs, event-failure versus uncertain-write codes,
+unexpected-exception redaction, cancellation before/after command entry,
+telemetry role isolation, query-string removal and retention of failed requests
+and warning traces. Local verification does not prove Azure ingestion; that
+remains Task 13.
+
+The repeatable Windows harness is `scripts\Test-Local.ps1`, with Azurite 3.35.0,
+Functions Core Tools 4.16.0, Node.js 26.13.0 on the measured machine, the pinned
+Playwright .NET 1.56.0 client and the installed Edge stable channel. It reuses no
+existing emulator or app process and performs no Azure operations. The C# MCP
+client remains 2.1.0, negotiating `2025-06-18` against the real host.
+
+On 2026-11-17, 123 unit tests, 24 offline dashboard tests and 11 isolated real
+integration tests passed. The two reset/repair/PASS/reject stories measured
+429-1,438 ms from invocation start to actual Blazor DOM observation at 1920x1080.
+Missing owned event/oven tables produced visible degraded/stale indicators and
+successful reset recovery. Real Table commit-response loss/cancellation and a
+competing conditional writer proved honest unknown/conflict outcomes with no
+write replay; no mocked kitchen data was substituted. These transport faults
+use the shared application service directly, while the story/invalid-input/
+state-outage checks use the MCP endpoint. Build, formatting, dependency audit
+and owned-process cleanup passed. See the [README](../README.md#repeatable-local-reliability-verification)
+for exact commands and measurements.
 
 `dotnet restore`, `dotnet build`, `dotnet test`, and `dotnet format` operate
 without Azure authentication and do not create or modify cloud resources.

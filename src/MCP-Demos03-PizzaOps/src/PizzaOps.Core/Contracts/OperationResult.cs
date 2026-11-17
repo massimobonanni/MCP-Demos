@@ -76,6 +76,11 @@ public sealed class OperationResult<T>
 /// <summary>Creates typed application results without placing factories on a generic type.</summary>
 public static class OperationResultFactory
 {
+    /// <summary>Preserves the outcome while attaching the host's current trace identifier.</summary>
+    public static OperationResult<T> WithCorrelation<T>(OperationResult<T> result, string correlationId) =>
+        OperationResult<T>.Create(result.Success, result.Code, result.Message, result.Data,
+            correlationId, result.EventRecorded, result.Warnings);
+
     /// <summary>Creates a completed operation result, optionally recording event status.</summary>
     public static OperationResult<T> Completed<T>(
         string code,

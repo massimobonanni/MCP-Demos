@@ -148,6 +148,10 @@ public sealed class TableKitchenRepository :
         {
             throw Translate(exception, isWrite: false);
         }
+        catch (AggregateException exception) when (IsReadRetryFailure(exception))
+        {
+            throw TranslateReadRetryFailure(exception);
+        }
 
         var current = MapOven(existing);
         var updatedEntity = new TableEntity(partitionKey, normalizedOvenId)

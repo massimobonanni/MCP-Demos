@@ -270,6 +270,20 @@ public sealed class TemperatureChangeServiceTests
     }
 
     [Fact]
+    public async Task CancellationDuringLookupDoesNotClaimAnAmbiguousWrite()
+    {
+        var (service, ovens, events) = CreateService(450);
+        ovens.ReadException = new OperationCanceledException();
+
+        var result = await service.SetTemperatureAsync("oven-02", 320, null, "trace", CancellationToken.None);
+
+        Assert.Equal(ResultCodes.Cancelled, result.Code);
+        Assert.Equal("trace", result.CorrelationId);
+        Assert.Equal(0, ovens.UpdateCalls);
+        Assert.Empty(events.Events);
+    }
+
+    [Fact]
     public async Task CancellationBeforeLookupDoesNotReadOrWriteStorage()
     {
         var (service, ovens, events) = CreateService(450);
@@ -331,12 +345,18 @@ public sealed class TemperatureChangeServiceTests
 
         public Exception? ExceptionToThrow { get; set; }
 
+        public Exception? ReadException { get; set; }
+
         public Task<IReadOnlyList<Oven>> GetAllAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<Oven>>([Current]);
 
         public async Task<Oven?> GetByIdAsync(string normalizedOvenId, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref readCalls);
+            if (ReadException is not null)
+            {
+                throw ReadException;
+            }
             var observed = Current;
 
             if (synchronizeReads)

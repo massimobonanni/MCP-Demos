@@ -10,9 +10,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Functions.Worker" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Mcp" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" />
+    <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" />
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="PizzaOps.UnitTests" />
+    <Compile Include="..\Telemetry\HostTelemetry.cs" Link="Telemetry\HostTelemetry.cs" />
     <ProjectReference Include="..\PizzaOps.Core\PizzaOps.Core.csproj" />
     <ProjectReference Include="..\PizzaOps.Storage\PizzaOps.Storage.csproj" />
   </ItemGroup>

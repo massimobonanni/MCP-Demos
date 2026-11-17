@@ -7,13 +7,8 @@ using PizzaOps.Core.Contracts;
 namespace PizzaOps.Functions;
 
 /// <summary>MCP adapter for the validated oven temperature command.</summary>
-public sealed class SetOvenTemperatureTool(ITemperatureChangeService temperatureChanges)
+public sealed class SetOvenTemperatureTool(ITemperatureChangeService temperatureChanges, ToolExecution execution)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
-
     /// <summary>Changes an existing oven temperature within the server-enforced policy.</summary>
     [Function(nameof(SetOvenTemperature))]
     public async Task<string> SetOvenTemperature(
@@ -27,29 +22,27 @@ public sealed class SetOvenTemperatureTool(ITemperatureChangeService temperature
         int targetTemperatureC,
         [McpToolProperty("reason", "Optional brief reason for the change; at most 120 characters.", false)]
         string? reason = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (!HasValidArgumentShape(
-            context.Arguments,
-            ovenId,
-            targetTemperatureC,
-            reason))
+        CancellationToken cancellationToken = default) =>
+        await execution.RunAsync("set_oven_temperature", mutation: true, async correlationId =>
         {
-            return JsonSerializer.Serialize(
-                OperationResultFactory.Failed<TemperatureChangeResult>(
-                    ResultCodes.InvalidArgument,
-                    "Arguments must contain only oven_id, target_temperature_c, and an optional string reason."),
-                JsonOptions);
-        }
+            if (!HasValidArgumentShape(
+                context.Arguments,
+                ovenId,
+                targetTemperatureC,
+                reason))
+            {
+                return OperationResultFactory.Failed<TemperatureChangeResult>(
+                        ResultCodes.InvalidArgument,
+                        "Arguments must contain only oven_id, target_temperature_c, and an optional string reason.");
+            }
 
-        var result = await temperatureChanges.SetTemperatureAsync(
-            ovenId,
-            targetTemperatureC,
-            reason,
-            correlationId: null,
-            cancellationToken);
-        return JsonSerializer.Serialize(result, JsonOptions);
-    }
+            return await temperatureChanges.SetTemperatureAsync(
+                ovenId,
+                targetTemperatureC,
+                reason,
+                correlationId,
+                cancellationToken);
+        }, cancellationToken);
 
     private static bool HasValidArgumentShape(
         IReadOnlyDictionary<string, object>? arguments,

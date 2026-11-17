@@ -60,6 +60,11 @@ public sealed class TemperatureChangeService : ITemperatureChangeService
         {
             return MapReadFailure(exception, correlationId);
         }
+        catch (OperationCanceledException)
+        {
+            return OperationResultFactory.Failed<TemperatureChangeResult>(
+                ResultCodes.Cancelled, "The read was cancelled before a temperature write started.", correlationId);
+        }
 
         if (oven is null)
         {
@@ -99,7 +104,11 @@ public sealed class TemperatureChangeService : ITemperatureChangeService
                 correlationId);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return OperationResultFactory.Failed<TemperatureChangeResult>(
+                ResultCodes.Cancelled, "The command was cancelled before a temperature write started.", correlationId);
+        }
         var updatedAtUtc = timeProvider.GetUtcNow();
         var lastAction = normalizedReason ?? $"Temperature set to {targetTemperatureC} C.";
         OvenUpdateResult update;

@@ -159,7 +159,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 07 | Deliver the deterministic test-bake tool | Done |
 | 08 | Expose the read-only dashboard API and health checks | Done |
 | 09 | Build the live, accessible Blazor dashboard | Done |
-| 10 | Complete telemetry and local reliability verification | ToDo |
+| 10 | Complete telemetry and local reliability verification | Done |
 | 11 | Extend Bicep with minimal PizzaOps resources and RBAC | ToDo |
 | 12 | Integrate AZD packaging and reproducible deployment automation | ToDo |
 | 13 | Verify the Azure deployment and presenter Copilot profile | ToDo |
@@ -450,6 +450,26 @@ Remote MCP-to-dashboard and stage verification remain Tasks 10 and 13.
 - UI updates within three polling intervals on the measured setup; tests wait on bounded conditions, not arbitrary sleeps.
 - Known successful mutations, failed event appends, and uncertain writes are distinguishable in results and telemetry.
 - No secrets/authorization headers enter test output or diagnostic capture. The same workflow runs without Azure credentials.
+
+**Local verification (2026-11-17):** Supported Functions isolated-worker and
+ASP.NET Core Application Insights SDK integrations now use one pipeline per
+executable, distinct roles, correlated application spans/structured outcomes,
+and safe failure mapping. In-memory SDK-channel tests prove one exported
+application span preserves the worker trace; Azure ingestion is not claimed.
+The Windows local helpers start an owned in-memory Azurite and two real hosts,
+gate destructive tests to `PizzaOps-Local-E2E`, check readiness and clean up.
+All 123 unit tests, 24 offline dashboard tests and 11 real integration tests
+passed. The real MCP/Table/API/Edge DOM story completed twice with reset between
+runs; focused real Table tests also exercised competing ETags, reset recovery,
+and lost/cancelled responses after actual commits without write replay.
+Owned event/oven table failures proved committed-state-plus-event-warning,
+visible degraded/stale states and recovery, without replacement mock state.
+Measured invocation-start-to-DOM times were 429-1,438 ms across repair/PASS/
+rejection in both runs; degradation/stale indicators appeared in 889/833 ms.
+Build, formatting and the transitive vulnerability gate passed. No Azure
+deployment occurred. Exact commands, tool versions, fault boundaries and
+remaining presenter/Azure gates are in the
+[PizzaOps README](../../src/MCP-Demos03-PizzaOps/README.md#repeatable-local-reliability-verification).
 
 **Implementation prompt:**
 

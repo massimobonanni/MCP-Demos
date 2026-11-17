@@ -162,6 +162,158 @@ as text, zero external asset requests, zero editable controls, and zero active
 animations under reduced motion were checked with no document overflow.
 Live Azure/MCP end-to-end and stage-network gates remain later plan tasks.
 
+## Telemetry and safe failures
+
+The executable roots register **one** Application Insights SDK pipeline only when
+`APPLICATIONINSIGHTS_CONNECTION_STRING` is configured. Local verification leaves
+it unset and requires no Azure credentials or telemetry endpoint:
+
+- Functions uses `Microsoft.ApplicationInsights.WorkerService` 2.23.0 with
+  `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.50.0 and
+  `AddApplicationInsightsTelemetryWorkerService` /
+  `ConfigureFunctionsApplicationInsights`. The official worker integration
+  preserves host/worker Activity correlation and disables relaying worker logs
+  through the host. There is no additional OpenTelemetry/Azure Monitor exporter.
+- Dashboard uses `Microsoft.ApplicationInsights.AspNetCore` 2.23.0 and
+  `AddApplicationInsightsTelemetry`. Do not enable App Service codeless
+  instrumentation alongside this SDK or add an additional exporter.
+- Cloud roles are `PizzaOps.Functions` and `PizzaOps.Dashboard`. The initializer
+  covers worker-originated telemetry; configure `WEBSITE_CLOUD_ROLENAME` as
+  `PizzaOps.Functions` for the separate Functions **host** pipeline when deploying.
+  Host dependency collection is disabled; worker SDK dependencies remain enabled.
+  Host/worker sampling is disabled so rejected/uncertain operations are retained.
+
+These are the compatible classic SDK integrations documented by the
+[Functions worker package](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.ApplicationInsights/2.50.0)
+and [ASP.NET Core SDK](https://learn.microsoft.com/en-us/azure/azure-monitor/app/asp-net-core).
+A future migration to OpenTelemetry must replace, not supplement, this pipeline.
+
+Every tool creates a child Activity without replacing the worker's parent.
+When export is configured, `TelemetryClient.StartOperation<DependencyTelemetry>`
+exports that application span through the same SDK pipeline; it is not a second
+exporter. Local-only runs use Activity correlation without an exporter.
+Its trace ID is returned as `correlation_id`, passed through application services
+into persisted event rows, and included in structured `ILogger` scopes/outcomes.
+Dashboard API snapshots have their own trace ID; persisted event
+`correlation_id` values identify the originating tool, not the later poll.
+Event correlation IDs stay in storage/telemetry, not the public event projection.
+Interactive refreshes also create independent correlated read scopes.
+
+JSON console logs include tool name, outcome code, elapsed milliseconds, success,
+`event_recorded`, and allowlisted warning codes. They distinguish policy
+rejection, ETag conflict, unavailable storage, a successful command with a failed
+event append, and an uncertain write. Successful reads are Debug-level and only
+successful polling request telemetry is filtered; failure/warning telemetry is
+not sampled away. Successful dashboard refresh spans are also filtered.
+Request/dependency URL query strings are removed before export.
+No application logger records arguments, reasons, prompts, keys, authorization
+headers, or raw exception messages. Do not enable HTTP body/header diagnostic
+capture when investigating the demo.
+
+The MCP boundary contains unexpected exceptions using safe messages. Unexpected
+command failures after entry conservatively return `STORAGE_OUTCOME_UNKNOWN`
+with no invented unchanged-state data; refresh before deciding whether to retry.
+Pre-entry cancellation and cancellation during the command's lookup return
+`CANCELLED`; interrupted writes remain uncertain. Confirmed oven commits keep
+their successful result when only event persistence fails, with
+`EVENT_WRITE_FAILED` or `EVENT_WRITE_OUTCOME_UNKNOWN`. No write is replayed.
+Malformed binding/transport errors can still be rejected by the Functions host
+before a tool runs; those are not fabricated application successes.
+
+Dashboard API exceptions return a generic problem with a trace identifier, and
+interactive failures retain the explicitly stale last snapshot. Read retries are
+bounded (two retries, 200 ms initial delay, one-second maximum delay, two-second
+per-network-attempt timeout); writes have zero retries. The five-second dashboard
+read deadline remains independent.
+
+## Repeatable local reliability verification
+
+On **Windows**, install .NET 10, Node.js, Microsoft Edge stable, Azurite 3.35.0
+and Functions Core Tools 4.16.0. The latter two can be installed with
+`npm install --global azurite@3.35.0 azure-functions-core-tools@4.16.0`.
+No Azure login, subscription, deployment, connection secret or downloaded
+Playwright browser is required. The pinned Playwright .NET client drives the
+installed Edge channel, using the supported `PLAYWRIGHT_NODEJS_PATH` override
+for Node rather than modifying the driver's files.
+
+From the solution directory:
+
+```powershell
+dotnet restore .\PizzaOps.sln
+dotnet build .\PizzaOps.sln --no-restore
+dotnet test .\PizzaOps.sln --no-build --no-restore
+dotnet format .\PizzaOps.sln --verify-no-changes --no-restore
+.\scripts\Test-Local.ps1
+```
+
+`Test-Local.ps1` also works when invoked from another directory: it selects the
+scoped SDK, restores the caller's directory/environment on exit, builds before
+starting services, and fails on missing prerequisites. It enables only the named
+`PizzaOps-Local-E2E` destructive environment. The test settings reject anything
+other than development storage, loopback HTTP and run-specific table names.
+
+The start helper refuses occupied emulator ports 10000-10002 instead of reusing
+or stopping an existing emulator. It starts an **in-memory** loopback-only
+Azurite instance and two real applications, with random application ports,
+unique tables and a unique kitchen partition. Readiness is bounded; Functions
+must expose its actual MCP route and Dashboard must pass liveness. A reset is
+still explicit C# operator/test logic, never application startup logic.
+Inherited cloud credentials and telemetry-export settings are cleared for these
+processes. Test diagnostics contain only synthetic data and operational outcomes.
+
+The test helper always stops its owned process trees and removes their run
+directory, including on failure. Ownership manifests verify PIDs/start times;
+unrelated services and storage are not stopped or deleted. To start the same
+isolated stack manually after building, use:
+
+```powershell
+$run = .\scripts\Start-Local.ps1
+# Follow the printed Development-only DemoAdmin configuration/reset instructions.
+# The returned object includes DashboardUrl and McpEndpoint.
+.\scripts\Stop-Local.ps1 -RunId $run.RunId
+```
+
+The real SDK MCP client performs reset -> exact four-tool discovery -> status ->
+recipe -> 450-to-320 repair -> PASS -> rejected 600 -> unchanged oven fields/ETag,
+**twice**, with a fresh reset and fresh DOM reset assertions between stories.
+The read-only API and actual Interactive Server Blazor DOM at 1920x1080 are
+checked; an old event from the previous story cannot satisfy the next story.
+Tool response trace IDs must match stored events and structured Functions logs.
+
+The same helper runs the real Table integration suite: observed-ETag conflict,
+a competing writer mapped to `CONCURRENT_UPDATE`, partition isolation, reset
+failure/recovery, malformed data, bounded event queries, and response loss or
+cancellation **after a real Table commit**. The last two faults are injected at
+the SDK HTTP transport boundary: actual persisted state changes, the application
+returns `STORAGE_OUTCOME_UNKNOWN` with no false unchanged-state claim, and the
+write is not retried. These focused fault cases call the shared application
+service/adapter; the two main stories use the real remote MCP endpoint.
+
+Deleting only the owned event table proves a repair can commit with an explicit
+failed-event warning while the UI shows **CONNECTED / DEGRADED** and the new
+temperature. Removing only the owned oven table proves MCP/API storage failure,
+retained **STALE / NOT LIVE** oven cards, and recovery after reset. Invalid MCP
+arguments preserve the persisted entity; an untrusted marker must not appear
+in captured application logs. No failure is replaced by mock kitchen state.
+
+**Local evidence (2026-11-17):** 123 unit tests and 24 offline dashboard tests
+passed; the helper passed all 11 real integration tests (including both stories).
+Build completed with zero warnings/errors; solution formatting and the transitive
+dependency vulnerability gate passed. Invocation-start-to-visible-DOM upper
+bounds, including the actual MCP call, were:
+
+| Story | Repair | PASS bake | Rejection |
+| --- | --- | --- | --- |
+| First reset/run | 1,438 ms | 429 ms | 1,162 ms |
+| Second reset/run | 971 ms | 881 ms | 1,369 ms |
+
+Event degradation appeared in 889 ms; stale storage state appeared in 833 ms.
+Every measured display change was below the three-poll / 3,000 ms threshold.
+Separate immediate API observations took 4-10 ms; those are **not** UI latency
+measurements. The helper cleaned all owned processes/artifacts and released
+emulator ports. These are local results, not Azure ingestion, deployed-key/RBAC,
+presenter Copilot compatibility, or stage-network evidence.
+
 ## Prerequisites
 
 - .NET 10 SDK. The scoped `global.json` selects SDK `10.0.404` and permits a
@@ -264,8 +416,12 @@ of this scaffold task.
 The integration tests are opt-in and use a running Azurite Table service when
 explicitly enabled. The reset integration test covers repeatability, recovery
 after a failure immediately following partition cleanup, and isolation from
-another kitchen partition. The CI workflow restores, builds, and checks
-formatting without Azure login, provisioning, or deployment.
+another kitchen partition. The Windows CI workflow restores, builds, runs offline tests, checks formatting,
+fails on vulnerable dependencies/audit errors, and runs the isolated real
+MCP/Table/Edge tests with pinned emulator/Core Tools versions. It performs no
+Azure login, provisioning, or deployment. The three older hard-coded-port MCP
+tests remain separately opt-in; the new isolated suite does not enable them or
+reuse another running host.
 
 The test projects use xUnit 2 with the VSTest runner (`Microsoft.NET.Test.Sdk`
 and `xunit.runner.visualstudio`); the command above is the solution-level test
