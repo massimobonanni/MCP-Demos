@@ -22,4 +22,11 @@
     <ProjectReference Include="..\PizzaOps.Storage\PizzaOps.Storage.csproj" />
   </ItemGroup>
 
+  <!-- The generated project can live outside the repository when AZD redirects artifacts. -->
+  <Target Name="CopyFunctionsSdkConfiguration" AfterTargets="WriteExtensionProject">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\global.json"
+          DestinationFolder="$(BaseIntermediateOutputPath)azure_functions"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

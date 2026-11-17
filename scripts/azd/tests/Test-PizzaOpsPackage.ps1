@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "pizzaops-package-$([Guid]::NewGuid().ToString('N'))"
+# Generated projects must not inherit the copied repository's global.json.
+$temp = "$testRoot-temp"
 $names = @('APPDATA', 'HOME', 'DOTNET_CLI_HOME', 'AZD_CONFIG_DIR', 'TEMP', 'TMP',
     'CustomAfterMicrosoftCommonTargets', 'PIZZAOPS_PACKAGE_EVIDENCE',
     'DOTNET_CLI_TELEMETRY_OPTOUT', 'DOTNET_SKIP_FIRST_TIME_EXPERIENCE',
@@ -19,7 +21,7 @@ try {
     $null = New-Item -ItemType Directory -Path $testRoot
     # Copy only source-controlled/nonignored inputs, never the active AZD environment or build outputs.
     $files = & git -C $repositoryRoot ls-files --cached --others --exclude-standard -- `
-        azure.yaml infra scripts/azd src/MCP-Demos03-PizzaOps
+        azure.yaml global.json infra scripts/azd src/MCP-Demos03-PizzaOps
     if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate packaging inputs.' }
     foreach ($file in ($files | Sort-Object -Unique)) {
         $destination = Join-Path $testRoot $file
@@ -28,7 +30,6 @@ try {
     }
 
     $profile = Join-Path $testRoot 'profile'
-    $temp = Join-Path $testRoot 'temp'
     $evidence = Join-Path $testRoot 'evidence'
     $null = New-Item -ItemType Directory -Path $profile, $temp, $evidence
     $env:APPDATA = if ($IsWindows) { $profile } else { $null }
@@ -53,9 +54,20 @@ try {
 
     Push-Location $testRoot
     try {
+        $rootSdk = (& dotnet --version).Trim()
+        if ($LASTEXITCODE -ne 0 -or $rootSdk -cne $expectedSdk) {
+            throw "Root SDK $rootSdk does not match the PizzaOps SDK $expectedSdk."
+        }
         & azd env new pizzaops-offline --no-prompt
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated local AZD environment.' }
-        & azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e pizzaops-offline --no-prompt --output-path (Join-Path $testRoot 'artifacts')
+
+        & dotnet publish .\src\MCP-Demos03-PizzaOps\src\PizzaOps.Functions\PizzaOps.Functions.csproj `
+            --configuration Release --artifacts-path (Join-Path $temp 'functions-artifacts') `
+            --output (Join-Path $temp 'functions-publish') --nologo
+        if ($LASTEXITCODE -ne 0) { throw 'Functions publish with external artifacts failed.' }
+        Write-Host 'PASS: Functions published with generated extension artifacts outside the repository.'
+
+        & azd package --no-prompt --output-path (Join-Path $testRoot 'artifacts')
         if ($LASTEXITCODE -ne 0) { throw 'Root-invoked AZD packaging failed.' }
     }
     finally { Pop-Location }
@@ -93,17 +105,19 @@ try {
             }
         }
         finally { $zip.Dispose() }
-        Write-Host "PASS: root AZD packaged $service with scoped SDK $actualSdk; ZIP layout and runtime verified."
+        Write-Host "PASS: root AZD packaged $service without --cwd using SDK $actualSdk; ZIP layout and runtime verified."
     }
 }
 finally {
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $original[$name]) }
     # AZD's update-check subprocess can finish writing after the package command exits.
-    for ($attempt = 0; (Test-Path -LiteralPath $testRoot); $attempt++) {
-        try { Remove-Item -LiteralPath $testRoot -Recurse -Force }
-        catch [IO.IOException] {
-            if ($attempt -ge 4) { throw }
-            Start-Sleep -Seconds 1
+    foreach ($path in @($testRoot, $temp)) {
+        for ($attempt = 0; (Test-Path -LiteralPath $path); $attempt++) {
+            try { Remove-Item -LiteralPath $path -Recurse -Force }
+            catch [IO.IOException] {
+                if ($attempt -ge 4) { throw }
+                Start-Sleep -Seconds 1
+            }
         }
     }
 }

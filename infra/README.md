@@ -153,7 +153,8 @@ reviewed Bicep change, not an unused AZD value.
 
 - Azure CLI and Azure Developer CLI (`azd`) 1.38.0 or later installed.
 - PowerShell 7 (`pwsh`) on the `PATH`, including on Linux/macOS, and a .NET SDK
-  compatible with the `net10.0` project. The `postprovision` hook and the
+  compatible with the root `global.json` (.NET 10 SDK `10.0.404` or a later
+  stable .NET 10 feature band). The `postprovision` hook and the
   `azd hooks run postprovision` command and packaging have been verified with
   stable AZD 1.38.0. AZD still labels `package` Beta in its command help.
 - Management permissions for subscription-scope deployments/resource-group
@@ -206,7 +207,7 @@ azd env set PIZZAOPS_OPERATOR_PRINCIPAL_ID <operator-object-id> -e demo02-dev
 azd env set PIZZAOPS_OPERATOR_PRINCIPAL_TYPE User -e demo02-dev
 
 # Only after target, permissions, what-if, runtime support and costs are approved.
-azd provision --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev
+azd provision -e demo02-dev
 ```
 
 Replace `demo02-dev`, the ID, and `eastus2` with the values you want. The
@@ -226,21 +227,31 @@ Run these examples from the repository root, only against a reviewed target:
 
 ```powershell
 # Local build/package only; no Azure login or resource changes.
-azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e demo02-dev --no-prompt
+azd package --all -e demo02-dev --no-prompt
 # Shared infrastructure, tables and RBAC; local Demo 02 postprovision hook runs.
-azd provision --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev
+azd provision -e demo02-dev
 # Application code only; preserves kitchen data and does not run postprovision.
-azd deploy --cwd .\src\MCP-Demos03-PizzaOps --all -e demo02-dev
+azd deploy --all -e demo02-dev
 # Combined package/provision/deploy lifecycle, not a kitchen reset.
-azd up --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev
+azd up -e demo02-dev
 ```
 
-**Keep the explicit `--cwd` on commands that build code.** AZD finds the root
-manifest by walking up from the PizzaOps solution. In AZD 1.38.0 a bare
-root `azd package` runs .NET from the root, not the service directory:
-verification found SDK 11 preview despite the scoped `global.json`.
-With the shown option, both actual publish builds used SDK **10.0.404**.
-There is no root SDK pin or second/custom publishing implementation.
+The root [`global.json`](../global.json) selects stable .NET 10 and pins
+`Azure.Functions.Sdk` to `1.0.0`, matching the PizzaOps solution configuration.
+AZD 1.38.0 runs .NET from its working directory, so the root configuration
+prevents an installed .NET 11 preview from being selected.
+The SDK selection applies to sibling demos too; all currently target .NET 10.
+The scoped PizzaOps configuration is retained for solution-local commands.
+If packaging reports `MSB4236` for `Azure.Functions.Sdk` in a temporary
+`azure_functions.g.csproj`, the generated project cannot find the Functions
+SDK version in `global.json` outside the repository. The Functions project's
+`CopyFunctionsSdkConfiguration` build target copies the scoped `global.json`
+beside that generated project before its restore/build. The root SDK pin
+alone does not fix this case. The packaging test also exercises
+`dotnet publish --artifacts-path` outside the repository to cover it.
+From the root, `azd package` and `azd up` need no `--cwd`; `azd up` without
+parameters uses the selected AZD environment. Review that target before running
+it. No custom publishing hook or infrastructure/runtime change is involved.
 Use absolute `--output-path` paths when retaining packages, because relative
 paths are resolved against the selected working directory.
 
@@ -284,8 +295,8 @@ environment, and deploy each package with the same native path:
 
 ```powershell
 azd env refresh -e demo02-dev
-azd deploy pizzaops-functions --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev --from-package <absolute-functions-zip>
-azd deploy pizzaops-dashboard --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev --from-package <absolute-dashboard-zip>
+azd deploy pizzaops-functions -e demo02-dev --from-package <absolute-functions-zip>
+azd deploy pizzaops-dashboard -e demo02-dev --from-package <absolute-dashboard-zip>
 ```
 
 Obtain target approval first; confirm runtime/configuration compatibility and
@@ -370,6 +381,11 @@ The packaging test copies only nonignored source inputs into a
 temporary repository-root layout, isolates AZD/profile state, reuses the NuGet
 cache, instruments the actual MSBuild publish SDK, validates both ZIPs, and
 cleans up. It never selects or refreshes the developer's active environment.
+The test runs root packaging without `--cwd` or explicit service/environment
+selection and checks that root and solution SDK selection agree. It also
+publishes Functions with intermediate artifacts in a sibling temporary
+directory, outside both `global.json` ancestor trees, reproducing the
+generated-project layout that previously failed with `MSB4236`.
 Both packages passed with SDK 10.0.404 even with SDK 11 preview installed.
 The earlier dev/demo parameter-profile checks do not validate the current
 simplified templates. Live Azure runtime, RBAC, authentication, telemetry, and dashboard

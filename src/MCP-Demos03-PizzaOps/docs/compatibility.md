@@ -5,7 +5,7 @@ Verified on 2026-11-16 for the initial scaffold:
 | Component | Pinned version or requirement | Compatibility evidence |
 | --- | --- | --- |
 | Target framework | `net10.0` | Microsoft Azure Functions isolated-worker guide lists .NET 10 for Functions 4.x |
-| .NET SDK | `10.0.404`, `latestFeature` roll-forward | Installed locally; scoped `global.json` keeps selection inside PizzaOps |
+| .NET SDK | `10.0.404`, `latestFeature` roll-forward | Root and scoped `global.json` select stable .NET 10 for AZD and solution-local commands |
 | Functions project SDK | `Azure.Functions.Sdk` 1.0.0 | Microsoft isolated-worker guide's .NET 10 project example and MCP minimum |
 | Functions worker | `Microsoft.Azure.Functions.Worker` 2.52.0 | Microsoft isolated-worker guide's .NET 10 example; above MCP minimum 2.1.0 |
 | MCP binding | `Microsoft.Azure.Functions.Worker.Extensions.Mcp` 1.6.0 | Latest published release shown by the official Azure Functions MCP extension repository |
@@ -18,14 +18,21 @@ versions are centrally managed by this solution's `Directory.Packages.props`;
 analyzers are configured by its `Directory.Build.props`. Neither file applies
 to the existing demos.
 
-The `global.json` is at the PizzaOps solution root, and all service projects
-are beneath it. **Task 12 correction (2026-11-17):** service paths alone do not
-control the CLI SDK. Bare root packaging with AZD 1.38.0 used installed SDK
-11.0.100-rc.3.26522.148. Root-invoked
-`azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e <environment>` discovers
-the root manifest while both publish builds use **10.0.404**, verified by
-recording `NETCoreSdkVersion` during the actual builds. Use that explicit
-working directory for packaging/deployment; do not add a root SDK pin.
+The root [`global.json`](../../../global.json) matches the PizzaOps solution
+configuration, including the Functions SDK version. When artifacts are redirected
+outside the repository, the Functions build copies the scoped configuration
+beside `azure_functions.g.csproj` so its unversioned SDK reference can resolve.
+The root pin alone does not fix that generated-project resolution failure;
+the packaging test also publishes with an external `--artifacts-path`.
+Service paths alone do not
+control the CLI SDK: AZD 1.38.0 runs .NET from its working directory. Without a
+root configuration, bare root packaging selected installed SDK
+11.0.100-rc.3.26522.148 and failed Functions SDK resolution.
+Root `azd package` now needs no `--cwd`; the offline test records
+`NETCoreSdkVersion` during both publish builds and verifies **10.0.404**.
+Root `azd up` likewise needs no working-directory option and uses the selected
+AZD environment. The root pin also applies to sibling demos, all targeting
+.NET 10; the scoped file remains for solution-local commands.
 
 The root manifest now has exactly two C# services (`function`/`appservice`),
 with matching discovery tags and nonsecret outputs. AZD 1.38.0 is the tested

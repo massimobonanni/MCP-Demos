@@ -90,6 +90,188 @@ events but never alter the oven. Event append failure preserves `TEST_COMPLETED`
 and its observation, with `event_recorded: false` and an `EVENT_WRITE_FAILED`
 warning (or `EVENT_WRITE_OUTCOME_UNKNOWN` when persistence is uncertain).
 
+## Configure the MCP server in VS Code
+
+Use the **Copilot** harness with GitHub Copilot enabled in a trusted VS Code
+workspace. The examples below use Streamable HTTP, not the dashboard API or
+the legacy `/sse` endpoint. Configuration alone is not proof of connectivity:
+verify discovery and a real tool call using the account/profile intended for
+the presentation. The [compatibility record](docs/compatibility.md) still
+tracks the unverified presenter and deployed-Azure gates.
+
+### Local development
+
+1. Start Azurite, run the separately authorized
+   [operator reset and status](#operator-reset-and-status), and start Functions
+   as described in [Local MCP tools](#local-mcp-tools).
+2. In a Copilot chat, run **Chat: Open Customizations**, select **MCP Servers**,
+   then **Add Server**. Select HTTP and enter
+   `http://127.0.0.1:7071/runtime/webhooks/mcp`.
+3. Name the server `pizzaops` and choose **Global > Copilot Global** for a
+   personal configuration. This edits `%USERPROFILE%\.copilot\mcp-config.json`
+   on Windows, unless `COPILOT_HOME` overrides that location.
+
+Alternatively, merge this entry into the existing file; do not overwrite
+other servers:
+
+```json
+{
+  "mcpServers": {
+    "pizzaops": {
+      "type": "http",
+      "url": "http://127.0.0.1:7071/runtime/webhooks/mcp",
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+Core Tools normally allows the local connection without a key. This does not
+validate Azure authentication. The HTTP configuration connects to an already
+running Functions host; it does not start Functions or Azurite.
+
+### Deployed Azure Function App
+
+After deployment, replace the local `pizzaops` entry with the following
+configuration. Use the Function App's actual default hostname from the Azure
+portal, not the dashboard hostname; keep only one PizzaOps target enabled to
+avoid mutating the wrong kitchen.
+
+```json
+{
+  "mcpServers": {
+    "pizzaops": {
+      "type": "http",
+      "url": "https://<function-app-hostname>/runtime/webhooks/mcp",
+      "headers": {
+        "x-functions-key": "${PIZZAOPS_MCP_KEY}"
+      },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+In the Azure portal, open the deployed Function App's **App keys** and obtain
+the **system key** named `mcp_extension` using an authorized operator account.
+A normal function key is not a substitute. Keep the key out of source control,
+chat, screenshots, command history, and URL query strings. The current app
+requires this key; Azure CLI/AZD sign-in alone does not authenticate MCP calls.
+Possession of the key permits requests to the shared kitchen, including writes.
+
+For native Copilot configuration, supply the variable to the VS Code process.
+Close existing VS Code instances first so `code .` does not reuse a process
+with an older environment. From a separate PowerShell terminal at the
+repository root:
+
+```powershell
+$env:PIZZAOPS_MCP_KEY = [System.Net.NetworkCredential]::new(
+    "",
+    (Read-Host "Paste the mcp_extension system key" -AsSecureString)
+).Password
+code .
+```
+
+The prompt masks the input and the command does not print the key. The value
+is still a secret in process memory/environment, not a persistent secret store.
+After the demo, close the VS Code instance and remove the terminal variable:
+
+```powershell
+Remove-Item Env:\PIZZAOPS_MCP_KEY
+```
+
+For remote/Dev Container sessions, configure the variable on the host where
+Copilot runs, not just in the local terminal. Native Copilot uses
+`mcpServers` and `${PIZZAOPS_MCP_KEY}`; do not copy editor-only `inputs` or
+`${input:...}` into this format. Existing Local-harness configurations use
+`.vscode/mcp.json` with `servers` instead and have different secret handling.
+See the [current VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
+and [Functions MCP authentication reference](https://learn.microsoft.com/azure/azure-functions/functions-bindings-mcp#connect-to-your-mcp-server).
+
+### Verify discovery before presenting
+
+1. Enable/start `pizzaops` in **Chat: Open Customizations > MCP Servers**,
+   complete the server trust flow, and inspect its status/output for errors.
+2. In an agent-capable Copilot chat, enable the four PizzaOps tools:
+   `get_ovens_status`, `get_pizza_recipe`, `set_oven_temperature`, and
+   `bake_test_pizza`. Keep normal tool approvals enabled.
+3. Use the read-only discovery prompt below and confirm a real tool invocation,
+   not a response inferred from repository files. Verify the initial
+   320/450/300 C state against the dashboard.
+
+On `401`, check the system key and environment inherited by the Copilot host;
+on `404`, check the Function App hostname and webhook route. For discovery or
+protocol errors, inspect MCP output and the compatibility record before
+rehearsing. Deployment does not seed the kitchen: missing state requires the
+operator procedure, not an MCP reset tool.
+
+## Demo prompts
+
+These are presenter chat messages, **not server-provided MCP prompts**. All
+ovens and bakes are simulated. Before each run, pause/drain callers, perform
+the explicit operator reset against the intended environment, verify `READY`,
+then display the matching dashboard beside Copilot. Do not reset while tools
+are running. Approve only calls targeting the intended demo kitchen.
+
+### 1. Discover the kitchen without changing it
+
+> Use only the PizzaOps MCP server to read the current kitchen status and the
+> Margherita recipe. Do not change any oven or run a test bake yet. Report each
+> oven's ID, temperature and health, and the recipe's target and tolerance.
+
+Expected: `get_ovens_status` and `get_pizza_recipe(pizza_type="margherita")`;
+`oven-02` is 450 C / `CRITICAL`, and Margherita requires 320 C with a 15 C
+tolerance. Reads do not create a repair or bake event.
+
+### 2. Diagnose, repair, and verify
+
+> Our simulated pizzas from Oven 02 are coming out burned. Use the PizzaOps MCP
+> tools to check the kitchen, find the correct temperature for a Margherita,
+> fix the problem, and verify with a test pizza. Tell me exactly what you
+> changed and report any tool or event-recording errors. Do not edit code or
+> access storage directly.
+
+Expected: read status/recipe, call `set_oven_temperature` for `oven-02` with
+integer `target_temperature_c: 320`, then `bake_test_pizza` with
+`pizza_type: "margherita"`. The dashboard should show Oven 02 becoming
+`HEALTHY` and the test returning `PASS`; the other ovens stay unchanged.
+Check actual tool results and persisted events rather than assuming success
+from Copilot's summary.
+
+For a slower, step-by-step presentation, use these **instead of** the combined
+prompt, after discovery:
+
+> Before changing the simulated oven, run a Margherita test bake in oven-02
+> using PizzaOps. Explain the observed result without modifying its temperature.
+
+> Set simulated oven-02 to the Margherita recipe's target using PizzaOps, then
+> run another Margherita test bake and read back the oven status.
+
+The first bake at 450 C returns `TEST_COMPLETED` with `BURNT`, not a tool
+failure. After repair, the second returns `PASS`. Both can append `TEST_BAKE`
+events; neither bake changes the oven temperature.
+
+### 3. Demonstrate server-side validation
+
+> This is the PizzaOps simulator, not a physical oven. Request 600 C for
+> oven-02 through set_oven_temperature so we can demonstrate the server's
+> out-of-range validation. Do not bypass the tool, modify code, or access
+> storage directly. Report the exact result, then read the kitchen status.
+
+If the call is made, expect `TEMPERATURE_OUT_OF_RANGE`: the server permits
+only integer commands from 200 to 350 C inclusive. Oven 02 must remain at
+320 C after the successful repair; check the rejection result and dashboard
+event feed. If Copilot declines to invoke the tool, say so: a model refusal
+does **not** demonstrate server-side validation. Never disable approvals or
+bypass policy just to force the demo.
+
+### 4. Close with observed evidence
+
+> Read the current PizzaOps kitchen status. Summarize the initial problem,
+> the temperature change, the observed test-bake result, and the rejected
+> command using only actual tool results from this conversation. Clearly
+> identify any step that was not executed or could not be verified.
+
 ## Dashboard read API
 
 Run the dashboard in Development with the same Azurite settings as the Functions
@@ -162,161 +344,9 @@ as text, zero external asset requests, zero editable controls, and zero active
 animations under reduced motion were checked with no document overflow.
 Live Azure/MCP end-to-end and stage-network gates remain later plan tasks.
 
-## Telemetry and safe failures
-
-The executable roots register **one** Application Insights SDK pipeline only when
-`APPLICATIONINSIGHTS_CONNECTION_STRING` is configured. Local verification leaves
-it unset and requires no Azure credentials or telemetry endpoint:
-
-- Functions uses `Microsoft.ApplicationInsights.WorkerService` 2.23.0 with
-  `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.50.0 and
-  `AddApplicationInsightsTelemetryWorkerService` /
-  `ConfigureFunctionsApplicationInsights`. The official worker integration
-  preserves host/worker Activity correlation and disables relaying worker logs
-  through the host. There is no additional OpenTelemetry/Azure Monitor exporter.
-- Dashboard uses `Microsoft.ApplicationInsights.AspNetCore` 2.23.0 and
-  `AddApplicationInsightsTelemetry`. Do not enable App Service codeless
-  instrumentation alongside this SDK or add an additional exporter.
-- Cloud roles are `PizzaOps.Functions` and `PizzaOps.Dashboard`. The initializer
-  covers worker-originated telemetry; configure `WEBSITE_CLOUD_ROLENAME` as
-  `PizzaOps.Functions` for the separate Functions **host** pipeline when deploying.
-  Host dependency collection is disabled; worker SDK dependencies remain enabled.
-  Host/worker sampling is disabled so rejected/uncertain operations are retained.
-
-These are the compatible classic SDK integrations documented by the
-[Functions worker package](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.ApplicationInsights/2.50.0)
-and [ASP.NET Core SDK](https://learn.microsoft.com/en-us/azure/azure-monitor/app/asp-net-core).
-A future migration to OpenTelemetry must replace, not supplement, this pipeline.
-
-Every tool creates a child Activity without replacing the worker's parent.
-When export is configured, `TelemetryClient.StartOperation<DependencyTelemetry>`
-exports that application span through the same SDK pipeline; it is not a second
-exporter. Local-only runs use Activity correlation without an exporter.
-Its trace ID is returned as `correlation_id`, passed through application services
-into persisted event rows, and included in structured `ILogger` scopes/outcomes.
-Dashboard API snapshots have their own trace ID; persisted event
-`correlation_id` values identify the originating tool, not the later poll.
-Event correlation IDs stay in storage/telemetry, not the public event projection.
-Interactive refreshes also create independent correlated read scopes.
-
-JSON console logs include tool name, outcome code, elapsed milliseconds, success,
-`event_recorded`, and allowlisted warning codes. They distinguish policy
-rejection, ETag conflict, unavailable storage, a successful command with a failed
-event append, and an uncertain write. Successful reads are Debug-level and only
-successful polling request telemetry is filtered; failure/warning telemetry is
-not sampled away. Successful dashboard refresh spans are also filtered.
-Request/dependency URL query strings are removed before export.
-No application logger records arguments, reasons, prompts, keys, authorization
-headers, or raw exception messages. Do not enable HTTP body/header diagnostic
-capture when investigating the demo.
-
-The MCP boundary contains unexpected exceptions using safe messages. Unexpected
-command failures after entry conservatively return `STORAGE_OUTCOME_UNKNOWN`
-with no invented unchanged-state data; refresh before deciding whether to retry.
-Pre-entry cancellation and cancellation during the command's lookup return
-`CANCELLED`; interrupted writes remain uncertain. Confirmed oven commits keep
-their successful result when only event persistence fails, with
-`EVENT_WRITE_FAILED` or `EVENT_WRITE_OUTCOME_UNKNOWN`. No write is replayed.
-Malformed binding/transport errors can still be rejected by the Functions host
-before a tool runs; those are not fabricated application successes.
-
-Dashboard API exceptions return a generic problem with a trace identifier, and
-interactive failures retain the explicitly stale last snapshot. Read retries are
-bounded (two retries, 200 ms initial delay, one-second maximum delay, two-second
-per-network-attempt timeout); writes have zero retries. The five-second dashboard
-read deadline remains independent.
-
-## Repeatable local reliability verification
-
-On **Windows**, install .NET 10, Node.js, Microsoft Edge stable, Azurite 3.35.0
-and Functions Core Tools 4.16.0. The latter two can be installed with
-`npm install --global azurite@3.35.0 azure-functions-core-tools@4.16.0`.
-No Azure login, subscription, deployment, connection secret or downloaded
-Playwright browser is required. The pinned Playwright .NET client drives the
-installed Edge channel, using the supported `PLAYWRIGHT_NODEJS_PATH` override
-for Node rather than modifying the driver's files.
-
-From the solution directory:
-
-```powershell
-dotnet restore .\PizzaOps.sln
-dotnet build .\PizzaOps.sln --no-restore
-dotnet test .\PizzaOps.sln --no-build --no-restore
-dotnet format .\PizzaOps.sln --verify-no-changes --no-restore
-.\scripts\Test-Local.ps1
-```
-
-`Test-Local.ps1` also works when invoked from another directory: it selects the
-scoped SDK, restores the caller's directory/environment on exit, builds before
-starting services, and fails on missing prerequisites. It enables only the named
-`PizzaOps-Local-E2E` destructive environment. The test settings reject anything
-other than development storage, loopback HTTP and run-specific table names.
-
-The start helper refuses occupied emulator ports 10000-10002 instead of reusing
-or stopping an existing emulator. It starts an **in-memory** loopback-only
-Azurite instance and two real applications, with random application ports,
-unique tables and a unique kitchen partition. Readiness is bounded; Functions
-must expose its actual MCP route and Dashboard must pass liveness. A reset is
-still explicit C# operator/test logic, never application startup logic.
-Inherited cloud credentials and telemetry-export settings are cleared for these
-processes. Test diagnostics contain only synthetic data and operational outcomes.
-
-The test helper always stops its owned process trees and removes their run
-directory, including on failure. Ownership manifests verify PIDs/start times;
-unrelated services and storage are not stopped or deleted. To start the same
-isolated stack manually after building, use:
-
-```powershell
-$run = .\scripts\Start-Local.ps1
-# Follow the printed Development-only DemoAdmin configuration/reset instructions.
-# The returned object includes DashboardUrl and McpEndpoint.
-.\scripts\Stop-Local.ps1 -RunId $run.RunId
-```
-
-The real SDK MCP client performs reset -> exact four-tool discovery -> status ->
-recipe -> 450-to-320 repair -> PASS -> rejected 600 -> unchanged oven fields/ETag,
-**twice**, with a fresh reset and fresh DOM reset assertions between stories.
-The read-only API and actual Interactive Server Blazor DOM at 1920x1080 are
-checked; an old event from the previous story cannot satisfy the next story.
-Tool response trace IDs must match stored events and structured Functions logs.
-
-The same helper runs the real Table integration suite: observed-ETag conflict,
-a competing writer mapped to `CONCURRENT_UPDATE`, partition isolation, reset
-failure/recovery, malformed data, bounded event queries, and response loss or
-cancellation **after a real Table commit**. The last two faults are injected at
-the SDK HTTP transport boundary: actual persisted state changes, the application
-returns `STORAGE_OUTCOME_UNKNOWN` with no false unchanged-state claim, and the
-write is not retried. These focused fault cases call the shared application
-service/adapter; the two main stories use the real remote MCP endpoint.
-
-Deleting only the owned event table proves a repair can commit with an explicit
-failed-event warning while the UI shows **CONNECTED / DEGRADED** and the new
-temperature. Removing only the owned oven table proves MCP/API storage failure,
-retained **STALE / NOT LIVE** oven cards, and recovery after reset. Invalid MCP
-arguments preserve the persisted entity; an untrusted marker must not appear
-in captured application logs. No failure is replaced by mock kitchen state.
-
-**Local evidence (2026-11-17):** 123 unit tests and 24 offline dashboard tests
-passed; the helper passed all 11 real integration tests (including both stories).
-Build completed with zero warnings/errors; solution formatting and the transitive
-dependency vulnerability gate passed. Invocation-start-to-visible-DOM upper
-bounds, including the actual MCP call, were:
-
-| Story | Repair | PASS bake | Rejection |
-| --- | --- | --- | --- |
-| First reset/run | 1,438 ms | 429 ms | 1,162 ms |
-| Second reset/run | 971 ms | 881 ms | 1,369 ms |
-
-Event degradation appeared in 889 ms; stale storage state appeared in 833 ms.
-Every measured display change was below the three-poll / 3,000 ms threshold.
-Separate immediate API observations took 4-10 ms; those are **not** UI latency
-measurements. The helper cleaned all owned processes/artifacts and released
-emulator ports. These are local results, not Azure ingestion, deployed-key/RBAC,
-presenter Copilot compatibility, or stage-network evidence.
-
 ## Prerequisites
 
-- .NET 10 SDK. The scoped `global.json` selects SDK `10.0.404` and permits a
+- .NET 10 SDK. The root and scoped `global.json` files select SDK `10.0.404` and permit a
   later .NET 10 feature band where that exact SDK is unavailable.
 - Azure Functions Core Tools 4.x (4.0.7030 or later) only to run the Functions
   host locally. Building the solution does not require Core Tools.
@@ -406,19 +436,85 @@ dotnet test .\PizzaOps.sln --no-build
 dotnet format .\PizzaOps.sln --verify-no-changes --no-restore
 ```
 
-The SDK pin is scoped to this solution; existing repository demos continue to
-use their existing SDK selection. **Project paths alone do not make AZD honor
-this SDK pin.** AZD 1.38.0 runs .NET from its working directory. From the
-repository root use the explicit scoped working directory:
+The root [`global.json`](../../global.json) matches this solution's SDK
+configuration, so AZD selects stable .NET 10 from either working directory.
+The root SDK selection also applies to the sibling .NET 10 demos.
+
+### Create an AZD environment
+
+AZD reads the root [`azure.yaml`](../../azure.yaml). A named AZD environment
+stores its configuration under the ignored `.azure` directory in the current
+checkout. Creating that local AZD environment does not create Azure resources.
+
+#### Local development
+
+From the repository root, create a local environment and package without
+logging in to Azure or provisioning cloud resources:
 
 ```powershell
-azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e <environment> --no-prompt
+azd env new pizzaops-local
+azd env list
+azd package --all -e pizzaops-local --no-prompt
 ```
+
+To run PizzaOps locally rather than only package it, use the isolated
+Azurite/Functions/Dashboard setup. On Windows, from the repository root:
+
+```powershell
+pwsh -NoProfile -File .\src\MCP-Demos03-PizzaOps\scripts\Start-Local.ps1
+# Stop using the RunId printed by the start command:
+pwsh -NoProfile -File .\src\MCP-Demos03-PizzaOps\scripts\Stop-Local.ps1 -RunId <run-id>
+```
+
+This local runtime uses in-memory Azurite and per-run tables; it is separate
+from AZD provisioning and does not use or modify the cloud kitchen. The
+script's prerequisites and the standard local host workflow are described in
+[Local MCP tools](#local-mcp-tools).
+
+#### Remote Azure environment
+
+Use a distinct environment name for each Azure target. The root infrastructure
+provisions both Demo 02 and PizzaOps into the selected subscription and
+resource group; it is not a PizzaOps-only deployment. Sign in, create the
+environment, and set its required values from the repository root:
+
+```powershell
+az login
+azd auth login
+
+azd env new pizzaops-dev
+azd env set AZURE_SUBSCRIPTION_ID <subscription-id> -e pizzaops-dev
+azd env set AZURE_LOCATION eastus2 -e pizzaops-dev
+```
+
+Choose a region supported by both demos and review the subscription, tenant,
+RBAC permissions, resource changes, and cost before provisioning. The optional
+`PIZZAOPS_OPERATOR_PRINCIPAL_ID` and operator type settings are documented in
+the [infrastructure environment guide](../../infra/README.md#create-the-environment-and-provision).
+After approving the target and expected changes, provision and deploy, or use
+`azd up` to combine both operations:
+
+```powershell
+azd provision -e pizzaops-dev
+azd deploy --all -e pizzaops-dev
+# Alternatively, after reviewing the same target and changes:
+azd up -e pizzaops-dev
+```
+
+The root `azure.yaml` does not configure shared AZD remote state: the
+environment configuration remains in the creating checkout's `.azure`
+directory, even though its resources are in Azure. For team-shared environment
+state or further deployment/verification steps, follow the
+[infrastructure lifecycle guide](../../infra/README.md).
 
 AZD still discovers the single root [azure.yaml](../../azure.yaml). Both
 `pizzaops-functions` and `pizzaops-dashboard` publish with SDK 10.0.404 in the
-offline packaging test, including when a .NET 11 preview is the root default.
-No root SDK pin affects sibling demos. The Functions ZIP uses worker indexing
+offline packaging test without `--cwd`, even with .NET 11 preview installed.
+The Functions build also copies the scoped `global.json` beside its generated
+extension project when artifacts are redirected outside the repository.
+This prevents `MSB4236` for `Azure.Functions.Sdk`; the packaging test covers
+an external `dotnet publish --artifacts-path` as well as native AZD packaging.
+The Functions ZIP uses worker indexing
 from the pinned SDK and native AZD Flex deployment with remote build disabled.
 See the [infrastructure lifecycle and CI guide](../../infra/README.md#package-provision-deploy-and-reset-are-different-operations)
 for environment creation, protected OIDC setup, nonsecret outputs, verification
@@ -426,8 +522,8 @@ and known-good package rollback.
 
 `azd provision` creates shared Demo 02/PizzaOps resources, empty tables and
 RBAC; `azd deploy --all` deploys the two apps; `azd up` combines the lifecycle.
-Use the same `--cwd` option for commands that build. None seeds/resets the
-kitchen or retrieves the MCP key. Reset remains the explicit, separately
+These commands use the selected AZD environment unless `-e` is specified.
+None seeds/resets the kitchen or retrieves the MCP key. Reset remains the explicit, separately
 authorized operator procedure above. A new empty kitchen correctly fails
 readiness until the operator resets and verifies it.
 
