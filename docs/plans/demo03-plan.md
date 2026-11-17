@@ -160,7 +160,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 08 | Expose the read-only dashboard API and health checks | Done |
 | 09 | Build the live, accessible Blazor dashboard | Done |
 | 10 | Complete telemetry and local reliability verification | Done |
-| 11 | Extend Bicep with minimal PizzaOps resources and RBAC | ToDo |
+| 11 | Extend Bicep with minimal PizzaOps resources and RBAC | Blocked |
 | 12 | Integrate AZD packaging and reproducible deployment automation | ToDo |
 | 13 | Verify the Azure deployment and presenter Copilot profile | ToDo |
 | 14 | Produce and rehearse the ten-minute presenter runbook | ToDo |
@@ -169,6 +169,18 @@ Task 05 remains blocked: local legacy-protocol tests succeeded with the C#
 client, Inspector and Copilot CLI, and the user accepted the older revision
 for now. The intended VS Code presenter configuration has not been verified; see
 [`compatibility.md`](../../src/MCP-Demos03-PizzaOps/docs/compatibility.md).
+
+Task 11 infrastructure authoring is complete: the root Bicep project and
+PizzaOps module, environment parameters, abbreviations, and infrastructure
+documentation are in place. Local Bicep builds and parameter compilation pass
+for the default dev settings and a demo-profile example. Task 11 remains
+blocked because target details and approval for an Azure what-if have not been
+provided, and region/runtime/always-ready availability and cost have not been
+verified against the selected Azure provider. Do not run a what-if or
+provisioning until the target is confirmed and approved. After approval,
+validate provider capabilities and cost, then review a subscription-scope
+what-if for intended additions and preservation of Demo 02 resources before
+marking this task Done. Task 05 also remains blocked as noted above.
 
 ### Phase map and gates
 

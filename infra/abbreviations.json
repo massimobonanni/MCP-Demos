@@ -1,4 +1,10 @@
 {
   "aiFoundryAccounts": "aif",
-  "resourcesResourceGroups": "rg-"
+  "resourcesResourceGroups": "rg-",
+  "serverfarms": "asp-",
+  "sites": "app-",
+  "functionApps": "func-",
+  "storageAccounts": "st",
+  "components": "appi-",
+  "workspaces": "log-"
 }

@@ -2,10 +2,11 @@
 
 This folder contains the Bicep infrastructure used by Azure Developer CLI
 (AZD), configured through `azure.yaml` (`infra.path: ./infra`, module `main`).
-Provisioning creates the resources required by Demo 02; it does not deploy or
-start the .NET application.
+The subscription-scoped entry point provisions Demo 02 and PizzaOps resources
+into the environment's resource group; it does not deploy or start either
+.NET application.
 
-## Resources created
+## Demo 02
 
 AZD starts a subscription-scoped Bicep deployment. The template creates a
 resource group whose name includes the environment (`rg-mcp-demos-<environment>`),
@@ -29,6 +30,106 @@ flowchart TD
 The template exposes the resource group name, Foundry account name and
 endpoint, project name, and deployment name as AZD outputs. It does not expose
 keys or other secrets.
+
+## PizzaOps resources (Demo 03)
+
+The root `main.bicep` also invokes `modules/pizzaops.bicep` in that same
+resource group. It adds one Linux Flex Consumption Functions app and plan, one
+Linux App Service dashboard and plan, one shared StorageV2 account, the
+`PizzaOpsOvens` and `PizzaOpsEvents` tables, a private Flex deployment
+container, Application Insights, and its Log Analytics workspace. Every
+PizzaOps resource is tagged `demo: '03'`; existing Demo 02 names, tags,
+outputs, and the root `postprovision` hook remain separate and unchanged.
+
+```mermaid
+flowchart TD
+    RG["Shared resource group<br/>rg-mcp-demos-&lt;environment&gt;"]
+    Presenter["Presenter / Copilot"]
+    Functions["PizzaOps MCP Function App<br/>Linux Flex Consumption<br/>.NET 10 isolated"]
+    Dashboard["PizzaOps dashboard<br/>Linux App Service<br/>.NET 10 / Blazor"]
+    Storage["Shared StorageV2 account<br/>Shared-key access disabled"]
+    Ovens[("PizzaOpsOvens table")]
+    Events[("PizzaOpsEvents table")]
+    Deploy["Private Flex deployment container"]
+    Insights["Application Insights"]
+    Workspace["Log Analytics workspace"]
+
+    RG --> Functions
+    RG --> Dashboard
+    RG --> Storage
+    RG --> Insights
+    Insights --> Workspace
+    Presenter -->|"HTTPS / MCP"| Functions
+    Functions -->|"Table Contributor"| Ovens
+    Functions -->|"Table Contributor"| Events
+    Dashboard -->|"Table Reader"| Ovens
+    Dashboard -->|"Table Reader"| Events
+    Functions -.->|"System identity / host-storage RBAC"| Storage
+    Functions -.->|"Deployment Blob Contributor"| Deploy
+    Storage --> Ovens
+    Storage --> Events
+    Storage --> Deploy
+    Functions -.-> Insights
+    Dashboard -.-> Insights
+```
+
+The PizzaOps app and dashboard have system-assigned identities. The dashboard
+gets only `Storage Table Data Reader` on each application table. Functions
+gets `Storage Table Data Contributor` on both tables, and the host-storage
+permissions required by identity-based Functions storage: `Storage Blob Data
+Owner`, `Storage Queue Data Contributor`, and `Storage Table Data Contributor`
+at the account scope. Its Flex deployment identity also receives
+`Storage Blob Data Contributor` on the deployment container. The account
+disallows shared-key access; its HTTPS endpoints remain enabled with public
+network access, so data-plane access is enforced by Entra ID/RBAC rather than
+network isolation. Both app identities receive `Monitoring Metrics Publisher`
+on Application Insights, which has local authentication disabled.
+
+The optional `PIZZAOPS_OPERATOR_PRINCIPAL_ID` setting grants the supplied
+principal `Storage Table Data Contributor` on only the two PizzaOps tables.
+Leave it unset unless the authorized reset operator and deployment target are
+known.
+
+### PizzaOps environment settings
+
+`main.bicepparam` defaults PizzaOps to the existing `AZURE_LOCATION`, the
+`dev` profile, and zero Flex always-ready instances. Set AZD environment values
+before a future, approved deployment:
+
+| AZD value | Default | Effect |
+| --- | --- | --- |
+| `PIZZAOPS_PROFILE` | `dev` | `dev` uses a Linux B1 dashboard plan with Always On disabled; `demo` uses S1 with Always On enabled. |
+| `PIZZAOPS_LOCATION` | Empty | Optional PizzaOps-only region override; the resource-group and Demo 02 Foundry region policy is not changed. |
+| `PIZZAOPS_FUNCTIONS_ALWAYS_READY_HTTP_INSTANCES` | `0` | Restricted to 0 or 1. Keep at 0 until the selected region, actual MCP trigger scale group, and incremental cost are checked and approved. |
+| `PIZZAOPS_OPERATOR_PRINCIPAL_ID` | Empty | Optional user, group, or service-principal object ID for reset-table access. |
+| `PIZZAOPS_OPERATOR_PRINCIPAL_TYPE` | `User` | Set to `Group` or `ServicePrincipal` when the optional operator ID has that type. |
+
+The Flex app uses runtime `dotnet-isolated` version `10`, Functions v4, a
+2-GiB instance size, and a maximum of 40 instances. Its deployment package is
+configured for the system-assigned identity, while `AzureWebJobsStorage` uses
+the identity-based `accountName`/`credential=managedidentity` settings.
+App Service uses the built-in `DOTNETCORE|10.0` stack, HTTPS-only, TLS 1.2,
+WebSockets, and `/health/ready`. Both apps receive the Table endpoint and
+validated table/partition names through app settings. No MCP key is emitted
+as an output or configured by this infrastructure.
+
+The pre-existing `AZURE_LOCATION` allowlist remains the Foundry policy and
+still determines the resource-group location. It is not a statement that
+Flex .NET 10, App Service .NET 10, or the MCP extension is available there.
+Check actual runtime and service availability for the selected PizzaOps
+region before requesting target approval. If another supported region is
+needed, set `PIZZAOPS_LOCATION` without changing the existing Foundry
+allowlist.
+
+For development, use a named environment such as `mcp-demos-dev` and keep
+`PIZZAOPS_PROFILE=dev`. For a demo environment, explicitly set
+`PIZZAOPS_PROFILE=demo`; this selects the Standard dashboard plan and Always
+On but leaves Flex always-ready disabled. Verify the supported Flex scale
+group and obtain explicit cost approval before setting
+`PIZZAOPS_FUNCTIONS_ALWAYS_READY_HTTP_INSTANCES=1`. B1/S1 plan charges,
+workspace ingestion/retention, storage, and Flex execution/always-ready
+charges are separate cost considerations; estimate them for the selected
+region and expected usage before provisioning.
 
 ## Prerequisites and parameters
 
@@ -56,9 +157,10 @@ keys or other secrets.
   `switzerlandwest`, `uaenorth`, `uksouth`, `westeurope`, `westus`, `westus3`.
 
 The environment name is the one provided to `azd env new`; AZD passes it as
-`AZURE_ENV_NAME`. The `main.bicepparam` file reads these three variables
-directly with `readEnvironmentVariable`. The template does not pin the model
-version or capacity; these are left to the provider defaults.
+`AZURE_ENV_NAME`. The `main.bicepparam` file reads the existing three required
+variables and the optional PizzaOps settings with
+`readEnvironmentVariable`. The template does not pin the model version or
+capacity; these are left to the provider defaults.
 
 ## Create the environment and provision
 
@@ -71,14 +173,19 @@ azd auth login
 azd env new demo02-dev
 azd env set AZURE_SUBSCRIPTION_ID <subscription-id>
 azd env set AZURE_LOCATION eastus2
+azd env set PIZZAOPS_PROFILE dev
 
 azd provision -e demo02-dev
 ```
 
 Replace `demo02-dev`, the ID, and `eastus2` with the values you want. The
-region must be one of those listed above. If the environment already exists,
-select it with `azd env select demo02-dev` and update the parameters with
-`azd env set` if needed.
+region must be one of those listed above for Demo 02. An optional
+`PIZZAOPS_LOCATION` can target a separately validated region for PizzaOps.
+If the environment already exists, select it with `azd env select demo02-dev`
+and update the parameters with `azd env set` if needed. Do not run
+`azd provision`, `azd up`, or an Azure what-if until the subscription,
+environment, tenant, both regions, optional operator principal, and intended
+resource changes have been reviewed and explicitly approved.
 
 Alternatively, `azd up -e demo02-dev` provisions the infrastructure and then
 attempts the application's deployment phases defined by the project. Use
@@ -178,14 +285,13 @@ profile.
 
 ## Verification and cleanup
 
-To view the provisioning outputs:
+To view the nonsecret provisioning outputs:
 
 ```powershell
 azd env get-values -e demo02-dev
 ```
 
-To delete the resources created for the environment (including the account,
-project, and model deployment):
+To delete the resources created for the environment (including both demos):
 
 ```powershell
 azd down -e demo02-dev
