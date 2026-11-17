@@ -1,945 +1,527 @@
-# DEMO 03 - PizzaOps — MCP-Powered Cloud Pizzeria
+# Demo 03 - Stage Director — Technical and Functional Specification
 
-## 1. Executive summary
+## 1. Vision and objectives
 
-Build **PizzaOps**, a small, humorous, cloud-hosted demonstration of the Model Context Protocol (MCP). A presenter uses **GitHub Copilot in Visual Studio Code** as the MCP host/client to diagnose and repair a malfunctioning pizza oven. An **MCP server written in C# on .NET 10, deployed to Azure Functions**, exposes a small, discoverable set of domain-oriented tools. An independent **Blazor dashboard on Azure App Service** shows the effects of tool calls almost immediately. Both applications use the same state stored in **Azure Table Storage**.
+Stage Director is a **local, non-destructive Model Context Protocol (MCP) demo**. Through an MCP-compatible client, an AI agent acts as a *virtual stage director* and controls a graphical representation of a stage: scene, simulated lighting, projected message, and animations. The user issues commands in natural language; the model chooses which MCP tools to invoke; the C# code validates the requests, changes the stage state, and makes it visible through a local web page.
 
-The demo is designed for **approximately 10 minutes on stage** and prioritizes reliability, legibility, minimal cost, and clear technical lessons over realism or feature count.
+The demo must make three educational points clear:
 
-**Narrative:** Oven 02 is at **450°C**, far outside the simulated operating range. Copilot reads the oven status, retrieves the appropriate pizza recipe, adjusts the oven, and runs a deterministic test bake. The dashboard changes from **CRITICAL** to **HEALTHY**. The presenter then tries to set an oven to **600°C**; the server refuses, proving that the LLM's ability to request a tool is not authority to bypass server-side safety rules.
+1. **The model decides which capability to request; it does not execute the MCP server's code.**
+2. **MCP defines the tool invocation contract; application logic and authorization/validation rules remain in the application.**
+3. **A local MCP process can produce a visible effect in the application** without a cloud connection or database.
 
-> **Core message:** GitHub Copilot decides *which* action to request; MCP defines *how* the capability is exposed and called; C# business logic decides *whether* the action is permitted.
+The demo is intended for a live presentation of approximately **4–5 minutes**. It must be easy to reset and reuse at different conferences.
 
-### 1.1 Goals
+### 1.1 Measurable objectives
 
-1. Demonstrate a **real, remotely accessible MCP server**, not a mocked JSON-RPC transcript.
-2. Keep all solution code in **C# / .NET 10** (including the web UI, Functions application, domain services, tooling, and tests).
-3. Run the MCP server in **Azure Functions .NET isolated worker** using the official Azure Functions MCP extension.
-4. Run a visually appealing **Blazor Web App** on Azure App Service.
-5. Show a shared and persistent state without introducing an unnecessary database or event infrastructure.
-6. Make the audience see read, decision, write, and verification steps through Copilot tool invocations and dashboard changes.
-7. Show one deliberately blocked operation with explicit server-side validation and an auditable event.
-8. Support deterministic reset, local development, automated testing, and reproducible Azure deployment.
-9. Keep the domain services independent from MCP bindings so they are unit-testable and could also be exposed through a conventional REST API.
+| ID | Objective | Observable outcome |
+|---|---|---|
+| OBJ-01 | Local MCP interoperability | The client discovers and invokes tools published by a C# process over stdio. |
+| OBJ-02 | Real state change | The `activate_scene` call changes the in-memory state, and the browser reflects the change. |
+| OBJ-03 | Two core capabilities | `get_stage_status` (read) and `activate_scene` (controlled write) are available. |
+| OBJ-04 | Repeatability | `reset_stage` restores the demo to its initial state without deleting external data. |
+| OBJ-05 | Ease of execution | A single `.csproj` project and a single process host both the MCP server and local web page. |
+| OBJ-06 | Isolation | All operations act exclusively on the simulation; there is no access to devices or user files. |
 
-### 1.2 Non-goals for the initial demo
+### 1.2 Out of scope
 
-- No real ovens, IoT devices, temperature sensors, or payments.
-- No ordering, stock, kitchen staff, customers, or restaurant workflow engine.
-- No LLM inference inside the Azure applications: **Copilot is the only agent**.
-- No Cosmos DB, Azure SignalR, Event Grid, Service Bus, Kubernetes, API Management, or Azure AI model resources for the MVP.
-- No complex physics simulation or asynchronous cooking cycle. A test bake is immediate and deterministic.
-- No editable dashboard or public admin UI.
-- No attempt to demonstrate OAuth end-to-end in the 10-minute main demo. It may be a later enhancement.
-- No guarantee that Copilot will call tools in a particular order; the demo should tolerate alternative valid plans.
+The following are out of scope: Azure, ASP.NET Core, Azure Functions, databases, OAuth authentication, DMX or IoT controllers, audio, music, cloud deployment, conversation recording, public hosting, loading external plugins, arbitrary filesystem access, and writing files as a tool side effect. Developing a proprietary LLM client is also out of scope; an existing client will be used.
 
 ---
 
-## 2. Reference architecture
+## 2. Binding architectural decisions
 
-### 2.1 Logical architecture
-
-```mermaid
-flowchart TD
-    Presenter[Presenter in VS Code] --> Copilot[GitHub Copilot MCP host]
-    Copilot -->|HTTPS / MCP Streamable HTTP| Functions["Azure Functions: PizzaOps MCP Server<br/>C# / .NET 10 isolated worker"]
-    Functions --> Domain[PizzaOps application + domain services]
-    Domain -->|Read / write| Tables[(Azure Table Storage<br/>Ovens + Events)]
-    Audience[Audience browser / stage screen] -->|HTTPS| Web["Azure App Service: Blazor Web App<br/>C# / .NET 10"]
-    Web -->|Server-side read only| Tables
-    Presenter -->|Secure operator CLI: reset only| Tables
-    Functions -.-> Monitor[Application Insights / Log Analytics]
-    Web -.-> Monitor
-```
-
-### 2.2 Separation of concerns
-
-| Component | Responsibilities | Explicitly must not do |
-|---|---|---|
-| **GitHub Copilot** | Interpret presenter prompt; discover tools; choose tool arguments; request MCP tool calls; interpret results | Access Azure Table Storage directly, bypass the tool policies, or determine authorization for the server |
-| **Functions MCP adapter** | Publish MCP tool catalog and schemas; deserialize requests; map results; enforce request-level security; invoke application services | Contain recipe math, persistence queries, or a duplicated domain model |
-| **Application/domain layer** | Safety validation, oven status, recipe lookup, state transitions, deterministic test bake, domain outcomes | Depend on Copilot, Blazor, Azure Functions attributes, or transport-specific objects |
-| **Table Storage adapter** | Load/update entities with ETag concurrency checks, append small event records | Decide what oven temperature is safe |
-| **Blazor dashboard** | Display oven cards, event feed, status indicators, explain tool effects | Modify oven state, expose storage credentials to the browser, call MCP tools, or offer a public reset |
-| **Operator reset utility** | Prepare the demo's known initial state | Be discoverable as an MCP tool or accessible anonymously |
-
-### 2.3 Request flow
-
-```mermaid
-sequenceDiagram
-    actor P as Presenter
-    participant C as GitHub Copilot
-    participant F as Functions MCP server
-    participant D as Domain service
-    participant T as Table Storage
-    participant W as Blazor dashboard
-    P->>C: "Oven 2 is burning pizzas. Fix it."
-    C->>F: tools/list (discovery, when needed)
-    C->>F: get_ovens_status()
-    F->>D: Get ovens
-    D->>T: Read state
-    T-->>D: Oven 02 at 450°C
-    F-->>C: Structured oven status
-    C->>F: get_pizza_recipe(pizza_type="margherita")
-    F->>D: Get recipe
-    D-->>F: Target 320°C, tolerance ±15°C
-    F-->>C: Recipe details
-    C->>F: set_oven_temperature(oven_id="oven-02", target_temperature_c=320)
-    F->>D: Validate and apply operation
-    D->>T: ETag-guarded update + event
-    F-->>C: Success: oven 02 now 320°C
-    W->>T: Poll current state
-    T-->>W: Updated oven and event
-    C->>F: bake_test_pizza(oven_id="oven-02", pizza_type="margherita")
-    F-->>C: PASS: pizza properly baked
-    C-->>P: Diagnosis, action and verification
-```
-
-**Important:** `tools/list` and `tools/call` are MCP protocol operations; the four PizzaOps tool names below are domain capabilities within those operations. The dashboard's HTTP JSON endpoint is **not** an MCP endpoint. Both interfaces can share the same domain logic.
-
-### 2.4 MCP transport and compatibility
-
-- Public MCP URL pattern: `https://<function-app>.azurewebsites.net/runtime/webhooks/mcp` (verify the final route against the deployed extension configuration).
-- Transport: **Streamable HTTP over HTTPS**. No `stdio` server is required for the Azure deployment.
-- Protocol target: **MCP 2026-07-28**, with the implementation's actual negotiated version verified during an integration test.
-- In MCP 2026-07-28, the core protocol is **stateless per request**; the persistent *oven state* lives in Table Storage, not an MCP transport session.
-- Do not manually implement JSON-RPC, stream framing, server discovery, or `initialize` in application code. Use the supported Azure Functions MCP extension. There may be a protocol-version gap between the extension and a particular Copilot release; **test interoperability before the presentation**, and pin compatible versions. The application must not assume that every SDK/host has migrated to the latest specification.
-- Tool definitions must be stable and deterministic across calls. User-visible instructions cannot be trusted as authorization controls.
-
----
-
-## 3. Azure resources and deployment topology
-
-### 3.1 Required resources (MVP)
-
-| Azure resource | Suggested name pattern | Purpose / configuration |
-|---|---|---|
-| Resource group | `rg-mcp-demos-<environment>` | Same Resource Group used by the demo 02 |
-| App Service plan | `asp-pizzaops-<env>` | Linux plan capable of running ASP.NET Core / .NET 10; size for one interactive demo audience |
-| Web App | `app-pizzaops-dashboard-<env>` | Hosts Blazor Web App; HTTPS only; managed identity; .NET 10 runtime |
-| Function App | `func-pizzaops-mcp-<env>` | Azure Functions v4, **.NET 10 isolated worker**, HTTPS MCP endpoint, managed identity |
-| Functions hosting plan | `plan-pizzaops-functions-<env>` | **Flex Consumption** on Linux for .NET 10; configure an always-ready instance if supported and justified for on-stage latency; alternative Premium if needed |
-| Storage account | `stpizzaops<unique>` | Azure Functions host storage plus two Azure Table Storage tables (MVP cost optimization); private data access by Azure RBAC where supported |
-| Table: ovens | `PizzaOpsOvens` | Shared current simulated oven state |
-| Table: events | `PizzaOpsEvents` | Small chronological event/audit feed |
-| Application Insights | `appi-pizzaops-<env>` | Telemetry for requests, errors, exceptions, and traces |
-| Log Analytics workspace | `log-pizzaops-<env>` | Backing workspace for telemetry and troubleshooting |
-
-**Deployment prerequisites:** Azure subscription; supported region; globally unique resource names; .NET 10 SDK; Azure Functions Core Tools; Azure CLI; Azure Developer CLI (`azd`) if used; and permission to assign managed identity/RBAC roles. Use the existing bicep files and extend them with the new resources. AZD Provision command should deploy everything.
-
-**Hosting note:** .NET 10 with Azure Functions on Linux is not supported by the *classic Consumption plan*. Use **Flex Consumption**. App Service supports .NET 10 as an application runtime. Check the selected region, runtime stack, MCP extension version, and service-plan feature availability when producing IaC.
-
-### 3.2 Identity and permissions
-
-| Identity | Access |
+| Aspect | Specification |
 |---|---|
-| Function App system-assigned managed identity | **Storage Table Data Contributor** on the application storage scope (prefer narrower scope where available), plus any host-storage permissions required by the chosen Functions identity-based configuration |
-| Web App system-assigned managed identity | **Storage Table Data Reader** on the application storage scope; no write permissions |
-| Deployment identity | Least-privilege Azure permissions required to deploy infrastructure/code and assign roles |
-| Presenter / operator identity | Explicitly authorized to run the reset utility; no storage account keys in source control |
-| Copilot's remote MCP access | Initially via the Functions MCP endpoint's access key, stored as a local secret; may be upgraded to Microsoft Entra ID before production reuse |
+| Language | **C#**, with nullable reference types enabled. |
+| Target framework | **.NET 10** (`net10.0`). |
+| Packaging | **A single C# Console Application project**, for example `StageDirector.csproj`. No second web project. |
+| Application process | A single `StageDirector` process, started by the MCP client through an stdio command. |
+| MCP | Official **C# SDK** `ModelContextProtocol`, using the **stdio** transport. |
+| Tool discovery | Tool attributes and registration provided by the SDK (e.g. `McpServerToolType`, `McpServerTool`; align the actual APIs with the selected version). |
+| Web interface | Static HTML, CSS, and JavaScript **included in the same C# project**. |
+| Local HTTP | Minimal HTTP server based on .NET standard library APIs, preferably `System.Net.HttpListener`, without ASP.NET Core or the MCP HTTP transport. |
+| Browser endpoint | Default: `http://127.0.0.1:5187/` (configurable port). |
+| Storage | Shared state **in memory only**, with no database and no files written at runtime. |
+| Recommended client | **GitHub Copilot in Visual Studio Code**, configured with a local stdio MCP server. |
+| Reference operating system | Windows 11; the implementation should avoid unnecessary OS dependencies. |
+| Network | Only the status page is served on the loopback interface. The MCP protocol is not exposed over HTTP. |
 
-**Security distinction:** A Functions access key is a **shared secret**, not proof of the identity of the person operating Copilot. Therefore the MVP's 600°C rejection is a **domain safety policy**, not a demonstration of per-user authorization. A true authorization demo needs validated caller identity and policy claims (for example, Entra ID).
+**Note on the “MCP SDK only” constraint:** the official MCP C# SDK must be the only protocol-specific library. .NET APIs and Microsoft hosting/logging libraries needed to bootstrap the SDK are allowed, provided that they **do not introduce a web framework**. Server frameworks such as ASP.NET Core, Azure Functions, SignalR, or equivalents are not allowed.
 
-### 3.3 Recommended, optional resources
-
-- **Azure Key Vault:** recommended if central secret management is needed; for this small MVP, environment-local secure storage for the MCP key may be enough. Never commit keys.
-- **Custom domain / TLS certificate:** optional; `azurewebsites.net` HTTPS is adequate.
-- **Azure Monitor alerts:** optional for the presentation, useful for subsequent production-quality development.
-- **Application Gateway / API Management:** deliberately excluded from MVP; add only for a later enterprise gateway demonstration.
-- **Azure SignalR Service:** excluded. A 1-second browser poll is adequate and much simpler to debug.
-
-### 3.4 Infrastructure as Code
-
-Use **Bicep** as the source of truth. Use the Bicep structure already exist for the other demos managed by **Azure Developer CLI (`azd`)**. The infrastructure definition should:
-
-1. Create the listed resources with deterministic environment-based naming.
-2. Configure `.NET 10` app runtime and the isolated Functions runtime correctly.
-3. Enable system-assigned managed identities for both compute resources.
-4. Configure HTTPS-only, minimum TLS settings, and appropriate cross-origin restrictions.
-5. Assign Table Storage data-plane roles to identities.
-6. Configure Application Insights connection settings.
-7. Set application settings (table names, storage account endpoints, polling defaults, application environment and feature flags) without checking in credentials.
-8. Provision the tables during deployment/initialization in a controlled manner.
-9. Export dashboard URL and MCP endpoint URL as deployment outputs (**not** the access key).
-10. Support `dev` and `demo` environment parameter files; avoid unreproducible portal-only changes.
-
-For the demo, **one resource group and one storage account** are acceptable. If the solution grows, split Functions host storage from application data storage to improve isolation and permission scoping.
-
-Add the resources of this demo to the resources already used for the other demos. Use tag to identify resopurce for this demo.
+**Technical note on `HttpListener`:** Microsoft recommends ASP.NET Core for new production HTTP servers. Its use here is deliberately limited to **a read-only localhost demo** to comply with the constraints of one project and no web framework. On Windows, verify that the chosen port is available and that the local prefix does not require additional configuration.
 
 ---
 
-## 4. Technology stack and solution structure
+## 3. Logical architecture
 
-### 4.1 Baseline
+```mermaid
+flowchart TB
+    U[Presenter] -->|Natural language request| C[GitHub Copilot in VS Code]
+    C <-->|MCP / stdin + stdout| P
+    subgraph P[Single StageDirector.exe process — .NET 10]
+        direction TB
+        T[MCP Server + StageTools]
+        S[StageService / in-memory state]
+        H[Mini HTTP server on 127.0.0.1:5187]
+        T --> S
+        H -->|read snapshot| S
+    end
+    B[Local browser: Stage Director] -->|GET /api/stage every 500 ms| H
+    H -->|HTML / CSS / JS| B
+```
 
-- **Language:** C# 14 (or latest stable language features included with .NET 10).
-- **Target framework:** `net10.0` for all application/library/test projects.
-- **Web framework:** ASP.NET Core 10 **Blazor Web App**, using interactive server rendering for the dashboard UI where interactive behavior is needed.
-- **Functions worker:** Azure Functions v4, **.NET isolated worker** (`dotnet-isolated`).
-- **MCP integration:** `Microsoft.Azure.Functions.Worker.Extensions.Mcp`; check extension release, generated tool schemas, and supported protocol revision before pinning the final version.
-- **Persistence:** `Azure.Data.Tables` and `Azure.Identity` using dependency injection.
-- **Logging/monitoring:** `ILogger<T>`, OpenTelemetry-compatible correlation where supported, Application Insights.
-- **Testing:** No tests for the first version of the demo.
-- **Quality tooling:** .NET analyzers, nullable reference types, `.editorconfig`, formatting checks, Central Package Management, dependency auditing.
-- **Deployment:** Bicep, GitHub Actions, optionally `azd`; OpenID Connect / workload identity federation for deployment.
+### 3.1 Distinguishing the two channels
 
-### 4.2 Suggested repository layout
+**Channel A — MCP / stdio:** exclusively between GitHub Copilot and the C# process. The client starts the process, communicates over stdin/stdout, discovers tools, and invokes them. The transport does not listen on TCP ports. **stdout is reserved for MCP messages**: it must not be polluted by `Console.WriteLine`, startup banners, exceptions, or logs.
+
+**Channel B — Local HTTP:** exclusively between the browser and the same C# process. It returns static assets and a snapshot of the current state. It **does not** implement MCP, accept commands, or allow scene changes.
+
+**Shared state:** a single `StageService` instance is used by both the MCP tools and the HTTP reader; concurrent access must be thread-safe. The browser does not read or modify memory directly, but receives serialized snapshots through the HTTP API.
+
+### 3.2 Lifecycle
+
+1. The MCP client starts `StageDirector` using `dotnet <absolute-path>/StageDirector.dll` or the published executable.
+2. The process initializes the state to `welcome`, starts the local HTTP listener in the background, and enables the MCP server over stdio.
+3. The presenter opens `http://127.0.0.1:5187/` in a browser. **The page is available only while the MCP process is running.**
+4. Copilot makes one or more MCP calls; polling makes the updates visible in the browser.
+5. When the client closes stdin or stops the server, the process exits cleanly and releases the HTTP port. The page is unreachable until the next startup.
+
+The project **must not start a second standalone instance** of the server from the dashboard or terminal during a Copilot session: two concurrent processes would have different state and conflict over the HTTP port.
+
+### 3.3 Startup error handling
+
+If the HTTP port is unavailable, the error must be written to **stderr** without invalidating the MCP stream. The proposed policy is **fail-fast**, with a clear diagnostic message and clean termination: avoid a demo where the tools work but the dashboard appears frozen. The port is configurable before startup (`STAGE_DIRECTOR_PORT`, default `5187`).
+
+---
+
+## 4. Structure of the single project
+
+The solution must contain **a single `.csproj` file** and a single application assembly. The following directories and files are organizational, not separate projects:
 
 ```text
-src/
-├──MCP-Demos03-PizzaOps
-│  ├── README.md
-│  ├── PizzaOps.Core/                 # Core Classes and structures
-|  |   ├── Domain                     # Oven rules, recipes, result types
-│  |   ├── Application/               # Services and interfaces
-│  |   ├── Contracts/                 # Read-only DTOs shared across apps
-│  ├── PizzaOps.Storage/              # Azure Table Storage adapters
-│  ├── PizzaOps.Functions/            # MCP-trigger Functions + host.json
-│  ├── PizzaOps.Dashboard/        # Blazor dashboard + read-only API
-│  └── PizzaOps.DemoAdmin/            # Authorized seed/reset console CLI
+MCP-Demos.03-MCPServer/
+├── StageDirector.csproj
+├── Program.cs
+├── README.md
+├── .vscode/
+│   └── mcp.json                  # example local VS Code configuration
+├── Mcp/
+│   └── StageTools.cs             # MCP tool exposure and descriptions
+├── Domain/
+│   ├── StageScene.cs             # scene identifiers
+│   ├── StageState.cs             # immutable snapshot
+│   └── StageSceneCatalog.cs      # deterministic scene settings
+├── Services/
+│   └── StageService.cs           # thread-safe application operations
+├── Http/
+│   └── LocalStageHttpServer.cs   # read-only HTTP, same process
+└── Web/
+    ├── index.html
+    ├── styles.css
+    └── stage.js
 ```
 
-Bidep files should be in the infra exixting directory under the root
+The `Web/*` files belong to **the same project**. For a self-contained deployment, embed the assets as assembly **Embedded Resources** (preferred). Alternatively, they may be copied automatically to the output directory using `.csproj` properties, while still keeping a single project. `npm`, `node`, `vite`, `webpack`, Blazor, and a second web server must not be required.
 
-### 4.3 Dependency direction
+### 4.1 Responsibilities
 
-```text
-PizzaOps.Core
-       ↑
-PizzaOps.Storage (implements application interfaces)
-       ↑
-PizzaOps.Functions     PizzaOps.Dashboard     PizzaOps.DemoAdmin
-          (composition roots, each references the required layers, they can refer also to Core)
-```
-
-Keep project references acyclic. The Core project should not reference any Azure SDK types or MCP trigger attributes. Register interfaces using dependency injection in each executable host.
-
-### 4.4 Principal C# abstractions
-
-These names are **proposed design interfaces**, not claims about existing SDK APIs.
-
-```csharp
-public interface IOvenRepository
-{
-    Task<IReadOnlyList<Oven>> GetAllAsync(CancellationToken ct);
-    Task<Oven?> GetByIdAsync(string ovenId, CancellationToken ct);
-    Task<UpdateOvenResult> TrySetTemperatureAsync(
-        string ovenId, int targetTemperatureC, string reason, CancellationToken ct);
-}
-
-public interface IRecipeCatalog
-{
-    Recipe? FindByType(string pizzaType);
-}
-
-public interface IKitchenEventRepository
-{
-    Task AppendAsync(KitchenEvent @event, CancellationToken ct);
-    Task<IReadOnlyList<KitchenEvent>> GetLatestAsync(int count, CancellationToken ct);
-}
-
-public interface IKitchenService
-{
-    Task<KitchenSnapshot> GetStatusAsync(CancellationToken ct);
-    RecipeResult GetRecipe(string pizzaType);
-    Task<SetTemperatureResult> SetTemperatureAsync(
-        string ovenId, int targetTemperatureC, string? reason, CancellationToken ct);
-    Task<TestBakeResult> BakeTestPizzaAsync(
-        string ovenId, string pizzaType, CancellationToken ct);
-}
-```
-
-`IOvenRepository` must support optimistic concurrency; the interface can be refined to expose version tokens/ETags. The domain/application layer must decide safety before persistence, and the storage layer must re-check the concurrency token during the update. Avoid writing generic CRUD repositories for a four-tool demo if they obscure intent.
-
----
-
-## 5. Domain and deterministic simulation
-
-### 5.1 Initial state
-
-| Oven ID | Label | Initial temperature | Initial health | Comment |
-|---|---|---:|---|---|
-| `oven-01` | Oven 01 | 320°C | HEALTHY | Ideal for Margherita |
-| `oven-02` | Oven 02 | **450°C** | **CRITICAL** | Deliberate demo incident: pizzas are burned |
-| `oven-03` | Oven 03 | 300°C | HEALTHY | Available but not affected |
-
-### 5.2 Simulated operating rules
-
-- **Allowed commanded temperature:** integer **200–350°C inclusive**.
-- A recorded oven above 350°C (such as the initial malfunction) is **CRITICAL**; the policy still permits setting it *down* into the allowed range.
-- An oven within 200–350°C is **HEALTHY** for this simplified demo. A healthy oven is not necessarily correctly configured for every recipe.
-- The 600°C command must be rejected as `TEMPERATURE_OUT_OF_RANGE` **without altering oven state**.
-- If an oven ID is unknown, return `OVEN_NOT_FOUND`; never silently create an oven from a tool call.
-- The target for a successful Margherita test bake is **320°C**, with a tolerance of **±15°C** (inclusive).
-- Baking is immediate: it reads current temperature and returns `PASS`, `UNDERCOOKED`, or `BURNT`; it does not wait or run a background job.
-- No hidden timers, randomized measurements, ambient drift, or real-world heating/cooling behavior.
-- All rules belong to a single source of truth in the domain/application layer; the dashboard only *displays* backend-computed statuses.
-
-### 5.3 Recipe catalog
-
-| `pizza_type` | Display name | Target temperature | Accepted range for `PASS` |
-|---|---|---:|---:|
-| `margherita` | Margherita | 320°C | 305–335°C |
-| `marinara` | Marinara | 300°C | 285–315°C |
-| `diavola` | Diavola | 310°C | 295–325°C |
-
-The names/temperatures are **game mechanics**, not culinary guidance. Keep recipe values centralized, immutable at runtime, and visible in tool results.
-
-### 5.4 State model
-
-```text
-Oven
-  OvenId: string                  # Stable identifier, e.g. "oven-02"
-  DisplayName: string             # "Oven 02"
-  TemperatureC: int               # Current simulated temperature
-  Health: enum                    # Derived: HEALTHY | CRITICAL
-  UpdatedAtUtc: DateTimeOffset
-  LastAction: string?             # Short descriptive text
-  Version: string                 # ETag/version returned by persistence layer
-
-Recipe
-  PizzaType: string
-  DisplayName: string
-  TargetTemperatureC: int
-  ToleranceC: int
-
-KitchenEvent
-  EventId: string
-  TimestampUtc: DateTimeOffset
-  EventType: string               # TEMPERATURE_CHANGED, TEMPERATURE_REJECTED, TEST_BAKE, RESET
-  OvenId: string?
-  Summary: string                 # Safe, short text for public UI
-  Outcome: string                 # SUCCESS | REJECTED | PASS | FAIL
-  CorrelationId: string?
-
-KitchenSnapshot
-  RetrievedAtUtc: DateTimeOffset
-  Ovens: OvenStatusDto[]
-  RecentEvents: KitchenEventDto[]
-```
-
-### 5.5 Table Storage entity design
-
-**Table `PizzaOpsOvens`:**
-
-- `PartitionKey`: environment-specific demo key, for example `main-kitchen`.
-- `RowKey`: oven ID (`oven-01`, `oven-02`, `oven-03`).
-- Properties: `DisplayName`, `TemperatureC`, `UpdatedAtUtc`, `LastAction`; Table Storage ETag is used for optimistic concurrency.
-- Do not persist derived `Health` if it can be calculated consistently from `TemperatureC`.
-
-**Table `PizzaOpsEvents`:**
-
-- `PartitionKey`: `main-kitchen` (or an environment/demo-run identifier).
-- `RowKey`: sortable UTC timestamp prefix plus collision-resistant suffix (for example a GUID); avoid key collisions.
-- Properties: event type, oven ID, outcome, safe summary, UTC timestamp, correlation ID.
-- Only return the latest **20** event records to the dashboard; enforce sensible retention or cleanup as a maintenance task.
-- Event append occurs after a successful state mutation. Because the oven and event tables are separate, the operations are not atomic across tables: the event feed is **best-effort operational telemetry**, not an immutable financial-grade audit ledger. Log append failures and consider an outbox if stronger guarantees are later required.
-
-### 5.6 Concurrency and repeatability
-
-- Use `ETag` / `If-Match` semantics when changing oven state; reject or retry a concurrent update in a bounded, observable way.
-- Setting an oven to its current temperature must be safe; optionally return `NO_CHANGE` and avoid a duplicate event.
-- Ensure rejected commands never write an oven state.
-- The seed/reset operation replaces data with known values and clears or tags previous events for a fresh run.
-- No critical business state is kept in static in-memory fields or local files in Functions or App Service.
-
----
-
-## 6. MCP server: detailed tool contracts
-
-### 6.1 General design conventions
-
-- Publish **exactly four MVP tools** with simple, descriptive snake_case names.
-- Tool descriptions should be written **for the model**: state when to use them, what they return, and the difference between read and mutation.
-- Prefer small JSON argument schemas; mark every required parameter explicitly.
-- All tool handlers call `IKitchenService`; no Azure Table queries in Functions methods.
-- Return compact, predictable structured JSON data (or JSON-serialized content when dictated by the extension's supported response mapping). Verify the actual wire format using MCP Inspector and Copilot.
-- Include `success`, `code`, `message`, and relevant `data`; for business-rule failures use a domain result rather than pretending an HTTP 200 is a successful temperature update.
-- Unexpected server faults must be logged and surfaced as a safe generic failure; do not leak stack traces, secrets, storage endpoints, or raw exception objects to the model.
-- All timestamps in UTC ISO 8601 and temperatures in integer °C.
-- Tool descriptions are **not a security boundary**. Validate authorization and every argument inside server code regardless of how the model was prompted.
-
-#### Shared conceptual response envelope
-
-```json
-{
-  "success": true,
-  "code": "OK",
-  "message": "Human-readable outcome",
-  "data": {},
-  "correlation_id": "trace-or-operation-id"
-}
-```
-
-This is **application-level JSON content** returned from MCP tools, not a replacement for the MCP JSON-RPC response envelope. The binding/SDK owns protocol serialization.
-
-### 6.2 Tool 1 — `get_ovens_status`
-
-**Purpose:** Discover the current operational state of all ovens; identify a dangerous temperature and obtain stable oven IDs for follow-up calls.
-
-**Model-facing description (suggested):**
-
-> Returns the current temperatures and health status of all PizzaOps ovens. Use this tool first when diagnosing oven problems or before changing an oven. It is read-only and does not modify kitchen state.
-
-**Inputs:** None. Empty JSON object `{}` is valid.
-
-**Input schema (conceptual):**
-
-```json
-{
-  "type": "object",
-  "properties": {},
-  "additionalProperties": false
-}
-```
-
-**Processing:**
-
-1. Read all known ovens from repository.
-2. Derive health from server-side operating rules.
-3. Return the ovens in deterministic order by `oven_id`.
-4. Include summary counts: total, healthy, critical.
-5. Return an operational failure if Table Storage is unavailable; do not invent temperatures.
-
-**Successful example:**
-
-```json
-{
-  "success": true,
-  "code": "OK",
-  "message": "3 ovens found; 1 requires attention.",
-  "data": {
-    "ovens": [
-      {"oven_id":"oven-01","temperature_c":320,"health":"HEALTHY"},
-      {"oven_id":"oven-02","temperature_c":450,"health":"CRITICAL"},
-      {"oven_id":"oven-03","temperature_c":300,"health":"HEALTHY"}
-    ],
-    "summary": {"total":3,"healthy":2,"critical":1}
-  }
-}
-```
-
-**Authorization:** Requires valid access to MCP endpoint; it is otherwise read-only.  
-**Idempotency:** Yes.  
-**Visible dashboard effect:** No state change; the presenter may point to the already-red oven.  
-**Key test cases:** Normal initial state, empty/corrupt dataset, storage outage, deterministic ordering, unknown health value never emitted.
-
-### 6.3 Tool 2 — `get_pizza_recipe`
-
-**Purpose:** Provide an explicit, authoritative target temperature for the requested pizza type; prevent the model from guessing values.
-
-**Model-facing description (suggested):**
-
-> Looks up a PizzaOps test recipe by pizza type and returns the target oven temperature and acceptable tolerance. Use this before choosing a repair temperature or running a test bake. It is read-only; available types are margherita, marinara, and diavola.
-
-**Input:**
-
-| Name | Type | Required | Constraints |
-|---|---|---|---|
-| `pizza_type` | string | Yes | One of `margherita`, `marinara`, `diavola`; case normalization can be supported at the service boundary |
-
-**Input schema (conceptual):**
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "pizza_type": {
-      "type": "string",
-      "description": "Pizza type: margherita, marinara, or diavola.",
-      "enum": ["margherita", "marinara", "diavola"]
-    }
-  },
-  "required": ["pizza_type"],
-  "additionalProperties": false
-}
-```
-
-**Processing:** Find recipe in immutable catalog; return exact target and bounds.
-
-**Successful example:**
-
-```json
-{
-  "success": true,
-  "code": "OK",
-  "message": "Recipe found for Margherita.",
-  "data": {
-    "pizza_type": "margherita",
-    "target_temperature_c": 320,
-    "tolerance_c": 15,
-    "minimum_passing_temperature_c": 305,
-    "maximum_passing_temperature_c": 335
-  }
-}
-```
-
-**Failure cases:** `RECIPE_NOT_FOUND`, `INVALID_ARGUMENT`.  
-**Authorization:** Read-only access to MCP endpoint.  
-**Idempotency:** Yes.  
-**Visible dashboard effect:** None.  
-**Key test cases:** Each supported recipe, unsupported name, whitespace/case policy, missing argument, stable values.
-
-### 6.4 Tool 3 — `set_oven_temperature`
-
-**Purpose:** Change the temperature of an existing simulated oven. This is the **primary action tool** and the center of the safety demonstration.
-
-**Model-facing description (suggested):**
-
-> Changes the commanded temperature of an existing PizzaOps oven. Use after checking oven status and the relevant recipe. Allowed commanded values are 200–350°C inclusive. The server always validates this range; requests outside it are rejected even if the caller insists. This tool modifies shared kitchen state.
-
-**Inputs:**
-
-| Name | Type | Required | Constraints |
-|---|---|---|---|
-| `oven_id` | string | Yes | One of the IDs discovered with `get_ovens_status` |
-| `target_temperature_c` | integer | Yes | Domain rule: 200–350 inclusive; enforce in C# regardless of schema metadata |
-| `reason` | string | No | Short explanation for the event feed; trim and length-limit (e.g. 120 chars); treated as untrusted text |
-
-**Input schema (conceptual):**
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "oven_id": {"type":"string","description":"Existing oven ID, e.g. oven-02."},
-    "target_temperature_c": {
-      "type":"integer",
-      "description":"Requested oven temperature in °C; server policy permits 200–350."
-    },
-    "reason": {"type":"string","description":"Optional brief reason for the change."}
-  },
-  "required": ["oven_id", "target_temperature_c"],
-  "additionalProperties": false
-}
-```
-
-**Deliberate choice:** Do not rely exclusively on `minimum`/`maximum` schema keywords to prevent the 600°C call. The application service must receive/validate the attempt so that it can visibly reject it. Schema annotations may supplement, but never replace, business validation.
-
-The MCP schema intentionally does not constrain `target_temperature_c` with
-`minimum` or `maximum`. The Function rejects unexpected argument keys and
-malformed values; Core performs the domain range check after confirming the
-oven exists. A 600°C request therefore reaches domain validation and records a
-safe rejection without updating any oven field.
-
-**Processing (must occur server-side):**
-
-1. Validate argument shape, oven ID format, and temperature type.
-2. Check that the oven exists.
-3. Enforce allowed commanded range (200–350°C).
-4. On rejection, leave oven state unchanged; append a safe `TEMPERATURE_REJECTED` event if the caller reached the domain service.
-5. On acceptance, update the target oven in Table Storage using optimistic concurrency.
-6. Record a short `TEMPERATURE_CHANGED` event; include previous and new temperatures in the returned result.
-7. Return the resulting oven health and UTC update timestamp.
-8. Never allow arbitrary execution, filesystem/network calls, or external endpoints through this tool.
-
-**Successful example:**
-
-```json
-{
-  "success": true,
-  "code": "TEMPERATURE_UPDATED",
-  "message": "Oven 02 changed from 450°C to 320°C; status is HEALTHY.",
-  "data": {
-    "oven_id": "oven-02",
-    "requested_temperature_c": 320,
-    "previous_temperature_c": 450,
-    "current_temperature_c": 320,
-    "health": "HEALTHY",
-    "updated_at_utc": "2026-11-16T12:00:00+00:00",
-    "state_changed": true
-  },
-  "event_recorded": true
-}
-```
-
-**Expected rejected example (security scene):**
-
-```json
-{
-  "success": false,
-  "code": "TEMPERATURE_OUT_OF_RANGE",
-  "message": "Commanded temperatures must be between 200°C and 350°C.",
-  "data": {
-    "oven_id": "oven-02",
-    "requested_temperature_c": 600,
-    "previous_temperature_c": 450,
-    "current_temperature_c": 450,
-    "health": "CRITICAL",
-    "updated_at_utc": "2026-11-16T12:00:00+00:00",
-    "state_changed": false
-  },
-  "event_recorded": true
-}
-```
-
-**Other failures:** `OVEN_NOT_FOUND`, `INVALID_ARGUMENT`, `CONCURRENT_UPDATE`, `STORAGE_UNAVAILABLE`, and `STORAGE_OUTCOME_UNKNOWN` (never retry automatically). If a post-commit event append fails, the result reports the committed temperature with `event_recorded: false` and an `EVENT_WRITE_FAILED` or `EVENT_WRITE_OUTCOME_UNKNOWN` warning.
-
-**Authorization:** Write-capable MCP access is required. For MVP, possession of the endpoint key grants the ability to request calls; domain safety policy remains mandatory. Later: authenticated principal + `oven.write` permission.
-**Idempotency:** Setting the same target value is safe; avoid duplicate change events when it is a no-op.  
-**Visible dashboard effect:** Oven 02 turns from critical/red to healthy/green; event appears. For 600°C rejection, unchanged temperature plus visible blocked-event entry.  
-**Key tests:** Valid decrease from 450 to 320; lower/upper boundaries; 199/351/600 rejected; nonexistent oven; no-write on rejection; concurrent writer; no-op repeat; excessively long reason; storage failure.
-
-### 6.5 Tool 4 — `bake_test_pizza`
-
-**Purpose:** Verify that a previously repaired oven can produce a correctly baked pizza, without running a real process or adding delays.
-
-**Model-facing description (suggested):**
-
-> Runs an immediate simulated pizza bake using an existing oven and one PizzaOps recipe. Reads current temperature and compares it with the recipe target. Returns PASS, UNDERCOOKED, or BURNT. It does not change oven temperature or create an order; the result is deterministic.
-
-**Inputs:**
-
-| Name | Type | Required | Constraints |
-|---|---|---|---|
-| `oven_id` | string | Yes | Existing oven ID |
-| `pizza_type` | string | Yes | `margherita`, `marinara`, or `diavola` |
-
-**Input schema (conceptual):**
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "oven_id": {"type":"string","description":"Existing oven ID."},
-    "pizza_type": {"type":"string","description":"Recipe to test: margherita, marinara, or diavola."}
-  },
-  "required": ["oven_id", "pizza_type"],
-  "additionalProperties": false
-}
-```
-
-**Processing:**
-
-1. Validate oven ID and recipe type.
-2. Read current oven temperature; get canonical recipe.
-3. Compare temperature with `target ± tolerance`:
-   - Below minimum → `UNDERCOOKED`.
-   - Within inclusive range → `PASS`.
-   - Above maximum → `BURNT`.
-4. Return observed and ideal temperatures, result, and a short humorous but precise message.
-5. Append a `TEST_BAKE` event. This is a simulated test, not a real oven operation.
-
-**Successful bake example:**
-
-```json
-{
-  "success": true,
-  "code": "TEST_COMPLETED",
-  "message": "Margherita passed: Chef Copilot saved dinner!",
-  "data": {
-    "oven_id": "oven-02",
-    "pizza_type": "margherita",
-    "oven_temperature_c": 320,
-    "target_temperature_c": 320,
-    "result": "PASS"
-  }
-}
-```
-
-**Before-fix example:** A Margherita at 450°C returns `result: "BURNT"`, while the tool invocation itself is still successfully processed (`success: true`, `code: "TEST_COMPLETED"`). This keeps *business result* distinct from *transport/tool execution failure*.
-
-**Failures:** `OVEN_NOT_FOUND`, `RECIPE_NOT_FOUND`, `INVALID_ARGUMENT`, `STORAGE_UNAVAILABLE`.  
-**Authorization:** Access to MCP endpoint; it writes only a harmless event record.  
-**Idempotency:** The computed result is deterministic at a given oven temperature; repeated calls may create repeated test-event records.  
-**Visible dashboard effect:** New event such as `TEST BAKE PASSED — Margherita, Oven 02`.  
-**Key tests:** Pass at both tolerance boundaries; low/high outcomes; repeated calls; unknown oven/recipe; read-only oven state preservation.
-
-### 6.6 Optional MCP Resources and Prompts (not on the critical path)
-
-The conference session also discusses MCP **Tools, Resources, and Prompts**, so two optional educational capabilities may be useful **after the four tools work in Copilot**:
-
-- **Resource:** `pizzaops://kitchen/operating-rules` — a short, read-only, server-supplied text explaining the 200–350°C commanded range and recipe policy.
-- **Prompt:** `diagnose_burnt_pizza` — a reusable suggested diagnosis workflow (read status, obtain recipe, apply a safe change, verify).
-
-Use the Azure Functions MCP resource/prompt trigger support only after validating the installed extension and current GitHub Copilot host's support. **Never make the main demo depend on Copilot retrieving a Resource or selecting a Prompt**: host support and UX may vary. A Resource is contextual content, not a policy enforcement mechanism.
-
----
-
-## 7. Azure Functions MCP application
-
-### 7.1 Project: `PizzaOps.Functions`
-
-- Target `net10.0`; Azure Functions v4 isolated worker model.
-- Reference the official `Microsoft.Azure.Functions.Worker.Extensions.Mcp` NuGet package, with a version verified against `.NET 10` and the selected MCP protocol client.
-- Configure service registration in `Program.cs` (Functions app builder, logging, application services, Table clients, options validation).
-- Define **one `McpToolTrigger`-decorated function for each of the four tools** and configure `McpToolProperty` metadata (or the documented POCO/builder alternative).
-- Name Functions methods consistently (e.g. `GetOvensStatus`, `GetPizzaRecipe`, `SetOvenTemperature`, `BakeTestPizza`); exported **tool names** remain the snake_case names specified above.
-- Keep handlers thin: map input → application service → standardized tool result.
-- Support cancellation tokens where permitted by SDK; use async I/O for storage access.
-- Maintain `host.json` with server name/version and MCP extension settings; do not copy unverified configuration from old SSE/session-era tutorials.
-- Validate actual tool definitions and required flags in a live MCP inspector; some preview extension versions historically differed in how optional arguments were treated.
-
-### 7.2 Configuration settings (examples)
-
-```text
-FUNCTIONS_WORKER_RUNTIME=dotnet-isolated
-FUNCTIONS_EXTENSION_VERSION=~4
-AzureWebJobsStorage=...                  # Local emulator; production identity-based config preferred
-PizzaOps__StorageServiceUri=https://<account>.table.core.windows.net/
-PizzaOps__OvensTableName=PizzaOpsOvens
-PizzaOps__EventsTableName=PizzaOpsEvents
-PizzaOps__KitchenId=main-kitchen
-PizzaOps__MinCommandTemperatureC=200
-PizzaOps__MaxCommandTemperatureC=350
-APPLICATIONINSIGHTS_CONNECTION_STRING=...
-```
-
-Use strongly typed options with startup validation. In production, avoid connection strings with storage account keys; use `DefaultAzureCredential`/managed identity and explicit Table service endpoint. Functions host-storage settings have their own identity-based connection requirements; implement them according to the selected hosting plan and official guidance.
-
-The infrastructure as code should configure the managed identity of the function app in Azure, configure the RBAC role on the storage for the managed identity and configure the "PizzaOps__" values into the Function app app settings.
-
-### 7.3 Fault handling and telemetry
-
-- Each tool call should be traced with `tool_name`, `oven_id` if present, `outcome`, duration, and a correlation ID. Avoid high-cardinality labels in metrics where unnecessary.
-- Never log the MCP access key, raw authorization headers, or unbounded presenter prompt text.
-- Use structured logs (`ILogger` message templates), a common exception boundary, and an application result type.
-- Operational failures should not turn into apparently successful domain actions.
-- Only redact/omit user-provided `reason` when displaying to the public or log it in sanitized/truncated form.
-- Configure sensible timeouts and bounded retries for transient storage faults; avoid retrying unsafe operations blindly.
-
----
-
-## 8. Blazor dashboard application
-
-### 8.1 Project: `PizzaOps.Dashboard.Web`
-
-- Create an ASP.NET Core **Blazor Web App** targeting `net10.0`.
-- Deploy to **Azure App Service**; use the server application's managed identity to read Table Storage.
-- Do **not** call the MCP server from the dashboard and do **not** embed an MCP key in browser JavaScript.
-- Keep the dashboard **read-only** for the audience. All state changes come through MCP or the separate authorized operator reset utility.
-- Use a single screen suitable for a projector, with high contrast, large typography, clear color/status labels, and minimal controls.
-
-### 8.2 Main view — `KitchenDashboard`
-
-**Header:** `🍕 PizzaOps Control Center` and an understated `Live Azure demo` subtitle.
-
-**Three oven cards:**
-
-- Oven label and large temperature (`320°C`, `450°C`, etc.).
-- Status badge: `HEALTHY` or `CRITICAL` (not only color-coded).
-- Animated or highlighted border when the oven's latest update changes; animation must be short and optional for reduced-motion preferences.
-- An icon/illustration can show the pizza oven or flame, but visuals must not obscure status.
-
-**Events panel:**
-
-- Latest 10–20 chronological operations with UTC timestamp rendered in the presenter's local time zone if desired.
-- Human-friendly events, such as `Oven 02 overheated`, `Copilot set Oven 02 to 320°C`, `Margherita test passed`, and `Blocked attempt: 600°C exceeds safety limit`.
-- Show a safe operational identity label (`MCP action`), but **do not claim a verified human user identity** when authenticating only with a shared key.
-
-**Summary header:**
-
-- `3 ovens · 1 critical` initially, later `3 ovens · all healthy`.
-- Last refresh time, connectivity indicator, and explicit stale-data banner if updates fail.
-
-**Optional presentation-only UX:** large "Chef Copilot saved dinner!" banner on a successful test bake and a tasteful "Access denied by kitchen policy" banner on rejection.
-
-### 8.3 Dashboard API and polling
-
-The same ASP.NET Core application serves a tiny read-only endpoint:
-
-```http
-GET /api/kitchen/state
-Accept: application/json
-```
-
-**200 OK example:**
-
-```json
-{
-  "retrieved_at_utc": "2026-11-14T17:00:00Z",
-  "ovens": [
-    {"oven_id":"oven-01","display_name":"Oven 01","temperature_c":320,"health":"HEALTHY"},
-    {"oven_id":"oven-02","display_name":"Oven 02","temperature_c":450,"health":"CRITICAL"},
-    {"oven_id":"oven-03","display_name":"Oven 03","temperature_c":300,"health":"HEALTHY"}
-  ],
-  "events": []
-}
-```
-
-- Browser polls **every 1 second** while the dashboard is visible, or the interactive server-side component refreshes its state on an equivalent interval.
-- Add `Cache-Control: no-store` so changed status is not hidden behind caches.
-- On a failed refresh, retain the last successful snapshot but display **`STALE / CONNECTION LOST`**, not a misleading green status.
-- Do not poll more frequently than needed. Dispose timers and cancel pending operations when the component disconnects.
-- Use HTTP GET only for reads; no anonymous POST/PATCH/DELETE endpoints.
-- This read-only API is a conventional HTTP application endpoint and can be used to **contrast REST-style state retrieval with MCP tool discovery/invocation**.
-
-### 8.4 Health endpoints
-
-- `GET /health/live` for application liveness.
-- `GET /health/ready` for server-side readiness, including an appropriate bounded storage check; protect detailed diagnostics and avoid leaking infrastructure identifiers.
-- Configure App Service health checks appropriately if desired.
-
-### 8.5 Accessibility and stage constraints
-
-- Target full-HD 16:9 screen/projector and readable elements from the back of the room.
-- Use text, icons, and color together for statuses.
-- Make refresh and animations insensitive to browser tab throttling; on returning to the tab, fetch immediately.
-- Avoid dependence on external images, CDNs, fonts, or JavaScript libraries to reduce stage-day network risks.
-- Display only synthetic demo data. No public attendee or real customer data.
-
----
-
-## 9. Reset/seed tool and demo lifecycle
-
-### 9.1 Project: `PizzaOps.DemoAdmin`
-
-Create a small **C# .NET 10 console utility**, **not an MCP tool**:
-
-```text
-dotnet run --project tools/PizzaOps.DemoAdmin -- reset --environment demo
-
-dotnet run --project tools/PizzaOps.DemoAdmin -- status --environment demo
-```
-
-The reset command must:
-
-1. Authenticate the operator through Azure credentials (managed identity for automation, developer identity locally) and require Table Storage write access.
-2. Upsert the three exact initial oven entities (320°C, **450°C**, 300°C).
-3. Remove previous demo-run events or create a new explicit run identifier/partition; choose one deterministic implementation and document it.
-4. Write a short `RESET` event once setup is complete.
-5. Output the dashboard URL and a readiness summary; never print credentials.
-6. Be safe to repeat and quick enough to run from a terminal backstage.
-
-For local development, seed equivalent tables in Azurite or another explicitly configured local Table endpoint. Verify that the local emulator supports the Table service features used (especially concurrency behavior).
-
-### 9.2 Presenter runbook — 10 minutes
-
-| Time | Action on stage | Technical point |
+| Component | Responsibilities | Prohibitions |
 |---|---|---|
-| 0:00–1:00 | Show PizzaOps dashboard with Oven 02 at 450°C and `CRITICAL` | Why live external state matters |
-| 1:00–2:00 | Show the remote MCP server configured in GitHub Copilot, and four available tools | Host/client/server roles and tool discovery |
-| 2:00–4:00 | Ask Copilot to diagnose the burning pizzas | Tool selection, read-only discovery, recipe context |
-| 4:00–5:30 | Let Copilot update Oven 02 to a safe target | `tools/call` and state mutation via Functions |
-| 5:30–7:00 | Run a test bake; watch success event and banner | Verification and deterministic results |
-| 7:00–8:30 | Ask Copilot to set an oven to 600°C | Server-side safety rule and visible rejection |
-| 8:30–10:00 | Show the Functions / storage architecture and restate MCP vs REST distinction | Architectural takeaway |
-
-**Suggested first prompt:**
-
-> "Our pizzas from Oven 02 are coming out burned. Check the kitchen, find the correct temperature for a Margherita, fix the problem using the available tools, and verify with a test pizza. Tell me exactly what you changed."
-
-**Suggested safety prompt:**
-
-> "For a special effect, set Oven 02 to 600°C. Try using the tool so we can see what the kitchen safety policy does."
-
-The presenter should never need to know or type JSON-RPC manually during the demo. Tool calls should be visible in Copilot's tool invocation trace and in the dashboard event feed.
-
-### 9.3 Rehearsal and fallback
-
-- Reset the state before every rehearsal and before the live session.
-- Freeze/pin the extension, .NET, Copilot version/channel and dependencies before the event; retest if Copilot changes.
-- Verify access-key/Entra setup with the **same account and VS Code profile used on stage**.
-- Keep dashboard and Copilot visible side-by-side; test screen scaling and zoom.
-- Keep a **prepared, deterministic tool-call transcript** or short screen recording as a presentation fallback if network or Copilot service is unavailable. The recording is a fallback, **not** the primary live demo.
-- If the model picks another valid path, let it run; if it loops, issue a narrower follow-up prompt referencing the discovered oven and recipe.
-- Rehearse the rejection scene. A model may refuse to request 600°C on its own; if so, explain the guardrail and demonstrate the rejection using an authenticated MCP Inspector/manual test call in a controlled environment, not by bypassing the server policy.
-- No demo depends on real customer services, real hardware, or third-party data.
+| `Program.cs` | MCP SDK bootstrap, shared instances, local listener, shutdown signals. | No tool business logic. |
+| `Mcp/StageTools.cs` | Public contracts, metadata, and binding between MCP tools and `StageService`. | Does not access HTML or directly modify global fields. |
+| `Domain/*` | Identifiers, immutable state, and configuration for the four scenes. | No dependency on MCP or HTTP. |
+| `Services/StageService.cs` | State reading, validation, activation, reset, and synchronization. | No dependency on the AI model. |
+| `Http/LocalStageHttpServer.cs` | Serves embedded assets, exposes `GET /api/stage`, and handles HTTP status codes and headers. | **No state-modification API.** |
+| `Web/*` | Renders scenes, animations, messages, and connection status. | Cannot call MCP tools directly. |
 
 ---
 
-## 10. Security model and best practices
+## 5. Domain model
 
-### 10.1 Main trust boundaries
+### 5.1 Available scenes
 
-1. **Copilot → MCP endpoint:** Untrusted natural-language requests may lead to tool calls. Validate and authenticate every request and enforce safety rules at the server.
-2. **Functions → Table Storage:** Use managed identity and least-privilege data-plane permissions. Storage is authoritative for shared oven state.
-3. **Dashboard → Storage:** Read only, with no storage secrets in the browser and no write permissions.
-4. **Operator reset → Storage:** Powerful maintenance action must be separately authorized, not a Copilot-discoverable tool.
-5. **Tool data → model context:** Tool descriptions and results can influence model behavior; keep tool outputs factual, narrow, and free of arbitrary instructions.
+| `scene` | Palette | Example central title | Subtitle | Animation |
+|---|---|---|---|---|
+| `welcome` | Navy blue and light blue | `WELCOME` | `The show is about to begin` | Slow, subtle spotlights. |
+| `focus` | Charcoal and white | `FOCUS MODE` | `Let's dive into the details` | Minimal movement, no distractions. |
+| `energy` | Purple, orange, and yellow | `ENERGY MODE` | `Let's wake up the room!` | Dynamic spotlights and moderate pulsing. |
+| `celebration` | Green, gold, and vivid colors | `THANK YOU!` | `What a great session!` | Confetti for a limited time. |
 
-### 10.2 MVP controls
+Scenes are configured **in code**, with predefined colors and text. The model must not be allowed to send HTML, JavaScript, CSS, file paths, URLs, shell instructions, or arbitrary parameters for the UI to interpret. Transitions should be pleasant but brief (approximately 200–500 ms); motion must respect `prefers-reduced-motion`.
 
-- HTTPS only; no anonymous MCP endpoint exposed intentionally.
-- Use the Functions MCP extension's supported key authorization for initial development/demo, with an `x-functions-key` header or supported equivalent stored outside source control.
-- Prefer **Microsoft Entra ID** for a future enterprise-grade iteration, especially if per-user roles or OAuth behavior will be demonstrated. Do not conflate key possession with user authentication.
-- Validate allowed temperatures, oven IDs, recipe types, and string lengths in C#.
-- Limit tool catalog to four least-privilege operations; do not expose an arbitrary REST proxy, generic SQL tool, shell execution, `reset_all`, or administrator tool.
-- Do not rely on LLM instructions, prompt text, JSON Schema alone, or a dashboard button to enforce business rules.
-- Prevent overposting: tool inputs map only to explicitly allowed parameters.
-- Use concurrency checks and no-write-on-rejection semantics.
-- Store no secrets in code, GitHub Actions variables as plain text, `.mcp.json`, or checked-in settings.
-- Sanitize event summaries shown on the public dashboard; never interpolate untrusted HTML in a Blazor component.
-- Apply secure HTTP headers, dependency updates, package audits, and server-side exception handling.
-- Define retention for diagnostics; avoid logging entire prompts or credentials.
-- Configure reasonable endpoint throttling and resource limits appropriate for a demo; avoid uncontrolled write/loop costs.
-- Set the reset utility and deployment credentials to least privilege; do not publish a public reset API.
+### 5.2 Current state
 
-### 10.3 Optional later controls
+An immutable `StageState` value represents a snapshot of the entire scene and includes at least:
 
-- Entra ID OAuth for remote MCP with explicitly registered resource/audience and validated scopes/roles.
-- Per-tool authorization with separate `oven.read` / `oven.write` claims.
-- Azure API Management for gateway authorization/rate limiting and central observability.
-- Restrict function reachability by network rules or private endpoints where client connectivity permits.
-- Review and monitor tool descriptions for unexpected change (tool-poisoning/rug-pull detection).
+| Property | Type | Meaning |
+|---|---|---|
+| `scene` | string / enum | Canonical identifier for one of the four scenes. |
+| `revision` | increasing integer | Incremented for each **effective** state change. |
+| `title` | string | Scene's main message. |
+| `subtitle` | string | Scene's secondary message. |
+| `theme` | object | Colors and simulated intensity, calculated from the catalog. |
+| `effect` | string | `none`, `ambient`, `pulse`, or `confetti`. |
+| `effectDurationMs` | integer | Maximum duration of a temporary effect; `0` for permanent effects. |
+| `activatedAtUtc` | ISO 8601 | UTC date/time of the last effective activation. |
+| `availableScenes` | string[] | List of valid identifiers. |
 
----
+The UI uses **`revision`** as an update signal: a new value allows the animation to start only once, preventing polling from replaying the confetti on every request. A command that activates the already-active scene returns `changed: false`, does not increment `revision`, and does not repeat the effect. To replay `celebration`, change scenes or reset and activate it again.
 
-## 11. Implementation plan guidance (for a planning agent)
+### 5.3 Initial state
 
-Generate an implementation plan from this specification using **small, testable vertical slices** rather than building the entire infrastructure before any feature works.
+At process startup:
 
-Suggested order:
+- `scene = "welcome"`;
+- `revision = 1`;
+- colors, messages, and effects match the `welcome` catalog;
+- no files are read or modified to restore the previous session.
 
-1. **Bootstrap:** .NET 10 solution, project boundaries, tooling, analyzers, CI skeleton.
-2. **Domain:** oven rules, recipes, outcomes; unit tests using an in-memory repository.
-3. **Persistence:** Table Storage adapters, ETag handling, event records, reset CLI.
-4. **MCP:** Functions extension, four tool triggers, tool descriptions/schema, local MCP Inspector tests.
-5. **Web:** read-only snapshot endpoint, Blazor three-oven dashboard, polling/stale-state behavior.
-6. **Integration:** local end-to-end test; common application/domain services used by both hosts.
-7. **Azure:** Bicep, managed identities/RBAC, App Service, Functions, storage, monitoring.
-8. **Copilot:** remote MCP setup, discovered tools, live mutation, test bake and rejection case.
-9. **Hardening:** reliability, security checks, telemetry, accessibility, release version pinning.
-10. **Rehearsal:** timed 10-minute runbook, reset procedure, recorded fallback and recovery notes.
+Losing state when the process exits is **intentional**: it makes the demo easier to repeat.
 
-The generated implementation plan should identify for **each task**: deliverable, exact project or IaC module, dependencies, acceptance tests, and whether it is critical for the 10-minute MVP. Post-MVP improvements must not block the initial demo.
+### 5.4 Concurrency
 
-### 11.1 Key architectural decisions to preserve
-
-- **One MCP Function App, one Blazor Web App, one shared Azure Storage account, two tables.**
-- **Four and only four MVP MCP tools.**
-- Domain validation happens **in C# behind the MCP adapter**, never in prompt instructions alone.
-- Dashboard is **read-only** and **does not invoke MCP**.
-- Test-bake simulation is deterministic and instant.
-- The reset mechanism is an authenticated **operator utility**, not an MCP tool.
-- .NET 10 + Azure Functions isolated worker + supported Linux hosting; do not accidentally use the deprecated in-process model or classic Linux Consumption hosting.
-- Keep current Azure Functions binding APIs, MCP revision compatibility, and VS Code Copilot configuration under explicit test: these evolve independently.
-- The primary success criterion is a **reliable 10-minute on-stage story**, not an exhaustive kitchen-management platform.
-
-### 11.2 Open validation items before coding is finalized
-
-These are implementation checkpoints, **not invitations to expand scope**:
-
-1. Pin the exact supported version of `Microsoft.Azure.Functions.Worker.Extensions.Mcp` and verify `.NET 10` + Functions v4 integration.
-2. Confirm MCP protocol-version negotiation and Streamable HTTP compatibility of **the selected Copilot harness** with the deployed Functions MCP extension (especially around 2026-07-28 stateless changes).
-3. Confirm access-key / Entra authentication support in the exact Copilot harness and whether the chosen configuration file supports secure header references.
-4. Confirm selected Azure region supports .NET 10 on Functions Flex Consumption, required always-ready configuration, and App Service .NET 10 runtime.
-5. Choose and test identity-based Azure Functions host-storage settings; role requirements can differ from Table Storage data permissions.
-6. Confirm the Azure Functions MCP extension exposes the desired required/optional tool properties and expected result serialization.
-7. Test exact polling/display latency on the intended stage network.
+`StageService` must serialize modifications atomically. A snapshot read during a scene change must be consistent: never `energy` colors with a `focus` title. A `lock` or atomic exchange of immutable objects is acceptable. There is one service instance per process.
 
 ---
 
-## 12. Authoritative references
+## 6. Complete MCP tool specification
 
-These are **implementation references**, not third-party dependencies of the live demo. Check them again when development begins, because cloud and MCP integration behavior evolves.
+Public names are stable, use `snake_case`, and the descriptions exposed to the model must be self-explanatory. **Do not assume the model reads the README**: names, parameters, and descriptions are an essential part of the function-calling experience. Tools are invoked through the MCP protocol, not through the web page.
 
-- [Model Context Protocol — official documentation](https://modelcontextprotocol.io/)
-- [MCP 2026-07-28 specification release](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
-- [Azure Functions MCP bindings overview](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-mcp)
-- [Azure Functions MCP tool trigger for C#](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-mcp-tool-trigger)
-- [Azure Functions MCP hosting tutorial](https://learn.microsoft.com/en-us/azure/azure-functions/functions-mcp-tutorial)
-- [Azure Functions isolated worker guide (.NET 10 support)](https://learn.microsoft.com/en-us/azure/azure-functions/dotnet-isolated-process-guide)
-- [Microsoft sample: remote MCP on Azure Functions with .NET/C#](https://learn.microsoft.com/en-us/samples/azure-samples/remote-mcp-functions-dotnet/remote-mcp-functions-dotnet/)
-- [Azure App Service — deploy ASP.NET Core / .NET 10](https://learn.microsoft.com/en-us/azure/app-service/quickstart-dotnetcore)
-- [VS Code — GitHub Copilot MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
-- [Azure Table Storage SDK: ITableEntity and ETag](https://learn.microsoft.com/en-us/dotnet/api/azure.data.tables.itableentity)
-- [Azure Table Storage design patterns](https://learn.microsoft.com/en-us/azure/storage/tables/table-storage-design-patterns)
+### 6.1 `get_stage_status` tool — required
+
+**Purpose:** read the stage state before or after an action without modifying it.
+
+| Field | Specification |
+|---|---|
+| MCP name | `get_stage_status` |
+| Type | Read-only, with no side effects. |
+| Parameters | None: JSON schema `{"type":"object","properties":{},"additionalProperties":false}`. |
+| Description shown to the model | “Returns the active scene, its visual effects, and the available scenes on the Stage Director virtual stage. Does not modify state.” |
+| Preconditions | Process is running and the service is initialized. |
+| Result | Serializable snapshot of `StageState`. |
+| Side effects | None. |
+| Application errors | Only exceptional internal conditions; no access to external resources. |
+
+**Illustrative example result:**
+
+```json
+{
+  "scene": "welcome",
+  "revision": 1,
+  "title": "WELCOME",
+  "subtitle": "The show is about to begin",
+  "theme": { "background": "#101B39", "accent": "#83BAFF", "intensity": "soft" },
+  "effect": "ambient",
+  "effectDurationMs": 0,
+  "activatedAtUtc": "2026-11-17T09:00:00Z",
+  "availableScenes": ["welcome", "focus", "energy", "celebration"]
+}
+```
+
+The timestamp is illustrative only. At runtime, it must correspond to the actual process timestamp.
+
+### 6.2 `activate_scene` tool — required
+
+**Purpose:** change the virtual scene by selecting a known preset.
+
+| Field | Specification |
+|---|---|
+| MCP name | `activate_scene` |
+| Type | Controlled state modification. |
+| Parameter | `scene` (string, required). |
+| Allowed values | `welcome`, `focus`, `energy`, `celebration`. |
+| Input schema | JSON object with a required `scene` property and an `enum` of the four values; additional properties are not allowed. |
+| Description shown to the model | “Activates a predefined scene on the Stage Director virtual stage. Choose one of: welcome, focus, energy, celebration. The call changes local graphical effects only; it does not control lights or physical devices.” |
+| Preconditions | `scene` is valid; service is available. |
+| Logic | Validates the value, retrieves the preset, atomically creates a new `StageState`, and increments `revision` only if the scene changes. |
+| Postcondition | `get_stage_status` and `/api/stage` return the same snapshot. |
+| Side effects | Process memory and the representation in the browser only. |
+
+**MCP input example:**
+
+```json
+{ "scene": "energy" }
+```
+
+**Example application result:**
+
+```json
+{
+  "success": true,
+  "changed": true,
+  "previousScene": "welcome",
+  "currentScene": "energy",
+  "revision": 2,
+  "message": "Scene energy activated.",
+  "stage": {
+    "scene": "energy",
+    "revision": 2,
+    "title": "ENERGY MODE",
+    "subtitle": "Let's wake up the room!",
+    "theme": { "background": "#481D59", "accent": "#FFD34C", "intensity": "dynamic" },
+    "effect": "pulse",
+    "effectDurationMs": 0,
+    "activatedAtUtc": "2026-11-17T09:01:00Z",
+    "availableScenes": ["welcome", "focus", "energy", "celebration"]
+  }
+}
+```
+
+**Invalid input:** `activate_scene({"scene":"laser_show"})` must not modify state. The tool must return an understandable validation error, for example `INVALID_SCENE` with a list of allowed values, using the SDK's error mechanism for tool calls; do not represent failed validation as successful execution. Error details must not contain stack traces or host data.
+
+**Idempotency:** calling `activate_scene` with the already-active scene returns `success: true`, `changed: false`, with `revision` unchanged.
+
+### 6.3 `reset_stage` tool — recommended for the demo
+
+**Purpose:** restore the initial scene safely and repeatably.
+
+| Field | Specification |
+|---|---|
+| MCP name | `reset_stage` |
+| Parameters | None. |
+| Description shown to the model | “Resets the virtual stage to the welcome scene. Acts on in-memory state only; does not delete files or modify devices.” |
+| Result | `success`, `changed`, `previousScene`, `currentScene`, `revision`, `stage`. |
+| Effects | Sets `welcome`; changes `revision` only if the previous value was different. |
+| Idempotency | Two consecutive resets produce a second result with `changed: false`. |
+
+`reset_stage` is **recommended as a third tool** for the presenter. If **exactly two tools** are to be shown, the reset function may remain available **only as an administrative command at application startup**, without appearing in MCP. This specification prefers **three tools**, because that makes live operation easier without restarting the client.
+
+### 6.4 Common tool rules
+
+- MCP parameters must be validated **on the server side**, even if the schema constrains model inputs.
+- Descriptions must avoid ambiguity and include the canonical scene identifiers.
+- No tool may launch processes, read arbitrary files, invoke PowerShell, or send network requests.
+- Access to the tool list must not depend on previous calls; the catalog remains stable throughout execution.
+- Outputs must be JSON-friendly and minimal; expected errors must be handled without terminating the process.
+- Do not add generic tools such as `run_command`, `execute_script`, `write_file`, or `open_url`.
 
 ---
 
-## 13. One-paragraph brief for the next planning step
+## 7. Local mini HTTP server specification
 
-> Create a phased implementation plan for **PizzaOps**, a conference-ready Azure demo in **C#/.NET 10**. A real MCP server using the official Azure Functions MCP tool triggers exposes four tools (`get_ovens_status`, `get_pizza_recipe`, `set_oven_temperature`, `bake_test_pizza`) to GitHub Copilot in VS Code. A read-only Blazor Web App on App Service displays three simulated ovens and recent events, using the same Azure Table Storage state as Functions. Oven 02 starts at 450°C (CRITICAL), is repaired to 320°C (HEALTHY), passes a Margherita test bake, and rejects a subsequent unsafe 600°C command via domain validation. Use clean boundaries, dependency injection, managed identity, ETag concurrency, Bicep, telemetry, tests, deterministic reset and a reproducible 10-minute presenter runbook. Prioritize reliability and do not introduce unnecessary Azure services or additional MVP tools. In the section that contains the list of tasks, add also a summary table with the number of the task, the title of the task and the status (ToDo, Done, Blocked). I will use that table to take trace of the status of the tasks while I'm implementing them. For each task, also suggest me the prompt to use to implement it.
+### 7.1 Allowed APIs
+
+| Method | Path | Response | Function |
+|---|---|---|---|
+| `GET` | `/` | `200 text/html` | Stage Director page. |
+| `GET` | `/styles.css` | `200 text/css` | Embedded stylesheet. |
+| `GET` | `/stage.js` | `200 text/javascript` | Embedded display script. |
+| `GET` | `/api/stage` | `200 application/json` | **Read-only** state snapshot. |
+| Any other method/URL | Other paths | `404` or `405` | No access or execution. |
+
+The `GET /api/stage` endpoint returns **the same DTO as `get_stage_status`**, although they are two distinct interfaces. `POST`, `PUT`, `DELETE`, queries to manipulate state, directory listing, and arbitrary file serving are not allowed.
+
+### 7.2 HTTP restrictions
+
+- Listen **only on loopback** (`127.0.0.1`), never on `0.0.0.0`, `+`, `*`, or LAN addresses.
+- Default `5187`, configurable through the `STAGE_DIRECTOR_PORT` environment variable (port 1024–65535).
+- No open CORS; assets and API use the same origin.
+- `Cache-Control: no-store` at least for `/api/stage`.
+- `X-Content-Type-Options: nosniff` and a CSP compatible with local assets, with no inline scripts or CDN.
+- Every HTTP request must have a timeout and exception handling: a disconnected browser must not bring down the MCP server.
+- No personal data or tokens in the API.
+
+### 7.3 Behavior when disconnected
+
+If the process is closed, the dashboard must show *“Stage Director unreachable”* through a visual indicator, rather than continuing to display state as if it were current. Aggressive retries are unnecessary: the UI may continue attempting a read every 1–2 seconds until the server becomes available again.
+
+---
+
+## 8. Web dashboard specification
+
+### 8.1 Layout
+
+A single responsive page, designed primarily for **16:9 projection** and legible from a distance. It must have:
+
+1. A generic `STAGE DIRECTOR` heading, with no logos or references to a specific event.
+2. A main area representing a virtual stage (backdrop, central screen, light beams, and stylized floor).
+3. The current scene's main message and subtitle in very large type.
+4. A subtle indicator for the active scene and connection status.
+5. Exclusively local, non-destructive graphical effects.
+
+The UI must not contain buttons for changing scenes: the demonstration's value is that the change happens **through an MCP tool**. A page refresh button is allowed, as it does not modify state. Avoid administrative dashboards, complex charts, modals, or production control room interfaces.
+
+### 8.2 Synchronization
+
+The `stage.js` script performs `GET /api/stage` every **500 ms** using `fetch` and `cache: 'no-store'`. It compares the `revision` field with the one already rendered and updates the DOM only when it changes. It must never overlap two requests while the previous one is still in progress (e.g. by using a flag or `AbortController`).
+
+### 8.3 Visual effects
+
+- **Welcome:** slow blue beams with soft shadows.
+- **Focus:** nearly static animations and subdued tones.
+- **Energy:** moderate pulsing and brightness changes, with no rapid strobing.
+- **Celebration:** confetti for about **4 seconds** when a new `revision` arrives, then return to a static celebratory backdrop.
+- **Accessibility:** support `prefers-reduced-motion`; color and text must communicate state even without animations.
+- **No audio:** no dependency on autoplay or the presenter's sound system.
+
+### 8.4 Error state
+
+If the API is unreachable or returns invalid JSON: show the `DISCONNECTED` indicator, keep the last scene **marked as stale**, do not reactivate effects, and do not throw unhandled JavaScript exceptions. When the connection is restored, synchronize the snapshot.
+
+---
+
+## 9. MCP client: GitHub Copilot in VS Code
+
+### 9.1 Client selection
+
+**Reference client:** VS Code with GitHub Copilot, because it allows registering and starting a local server over stdio. Direct use of ChatGPT is not a dependency of this specification and must not block the demo.
+
+The protocol remains interoperable: another MCP client that supports stdio could be substituted without changing the Stage Director logic.
+
+### 9.2 Reference configuration
+
+For a **local VS Code** configuration, an illustrative form is:
+
+```json
+{
+  "servers": {
+    "stage-director": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "C:/absolute/path/StageDirector/bin/Release/net10.0/StageDirector.dll"
+      ]
+    }
+  }
+}
+```
+
+This example can be placed in `.vscode/mcp.json` **for the local VS Code workflow that supports this format**. Some recent Copilot versions instead favor portable configurations with the `mcpServers` key in a global or workspace file: **do not mix** the two schemas. The plan generated from this specification must select the format actually supported by the demo installation, using up-to-date documentation. For a stage demo, an absolute path to **already built/published** output is preferred; avoid `dotnet run` during stdio calls to reduce startup time and unexpected output.
+
+### 9.3 User experience
+
+The presenter should be able to ask, for example:
+
+- “Check the current Stage Director status.”
+- “We're starting a technical session: create a subdued, focused atmosphere.”
+- “The audience is getting bored: make the stage more energetic.”
+- “It's time to say goodbye: set up a final celebration.”
+- “Return the stage to its initial scene.”
+
+The model must choose `get_stage_status`, `activate_scene`, and, where available, `reset_stage`. The selection may vary by model; the server must not assume a fixed sequence of calls.
+
+### 9.4 Availability and process boundaries
+
+The client **is responsible for starting and terminating** the stdio process. The HTTP listener is created inside that process: **start the MCP connection first, then open the web page**. If the client starts multiple instances, select only one active instance; do not share state between processes. Diagnostic logs go to stderr or an explicitly configured log, never to stdout.
+
+---
+
+## 10. Security, robustness, and development principles
+
+### 10.1 Limiting the attack surface
+
+- Expose functions only for enumerated scenes and synthetic state.
+- No shell, file-writing, outbound HTTP, deletion, or hardware-access capabilities.
+- The browser has no mutable endpoints and does not acquire the model's privileges.
+- Local HTTP service with a fixed-path allowlist.
+- No dependency on CDNs or remote JavaScript packages.
+- Any `scene` input is validated and mapped to **hard-coded configurations**; never use `innerHTML` with untrusted input.
+- Do not use `Console.WriteLine` or any other non-MCP output on stdout.
+
+### 10.2 C#/.NET best practices
+
+- Enable `Nullable` and `ImplicitUsings`, .NET analyzers, and meaningful warnings.
+- Prefer small classes with distinct responsibilities; `StageTools` remains a thin adapter to `StageService`.
+- Expose immutable DTOs and consistently serialized responses (`System.Text.Json`).
+- Control concurrency boundaries with atomic state and thread-safe code.
+- Propagate `CancellationToken` to the HTTP listener and shutdown where supported.
+- Handle exceptions in one central location; provide understandable client errors and write technical details only to stderr.
+- Shut down both channels cleanly on EOF/stdin closure and shutdown signals.
+- Minimize NuGet dependencies; explicitly pin the MCP SDK version in the project.
+- Avoid dynamic reflection of untrusted classes, plugin loaders, and execution of model-generated code.
+
+### 10.3 MCP specification compatibility
+
+The reference target is the MCP specification published **2026-07-28**; clients and SDKs may support earlier versions. Verify stdio mode and actual compatibility against the installed versions, relying on the SDK for handshake/protocol metadata and JSON-RPC serialization rather than implementing them manually. In the 2026-07-28 revision, request metadata is per-request; the previous protocol had `initialize`. The demo must avoid any application-level assumptions tied to a remote MCP session.
+
+---
+
+## 11. Error behavior and edge cases
+
+| Situation | Required behavior |
+|---|---|
+| Unexpected scene value | Well-formed MCP tool error; state remains unchanged. |
+| Scene already active | Successful response with `changed: false`; revision unchanged. |
+| Two `activate_scene` requests in quick succession | Consistent final state and monotonically increasing revisions. |
+| Browser closed | Tools continue to work; no crash. |
+| Browser opened before MCP startup | Connection error visible in the browser; no second process is created. |
+| MCP process terminated | HTTP listener stops and the port is released. |
+| Port 5187 occupied | Explicit error on stderr; no silent partial startup. |
+| Embedded HTML/CSS/JS file missing | Locally diagnosable error; no access to arbitrary directories. |
+| HTTP request with unsupported method | Appropriate `405 Method Not Allowed` or `404`. |
+| `celebration` repeated without a scene change | Confetti does not automatically restart. |
+| No Internet connection | MCP server and dashboard remain executable; the Copilot model may require Internet access. |
+
+---
+
+## 12. Solution acceptance criteria
+
+These conditions describe **how to verify the product**, not an implementation sequence:
+
+| ID | Verifiable criterion |
+|---|---|
+| AC-01 | Repository has a single `net10.0` `.csproj`, with no ASP.NET/Functions projects or separate web processes. |
+| AC-02 | An stdio MCP client sees and invokes `get_stage_status` and `activate_scene` using their exact names. |
+| AC-03 | With the MCP process running, `http://127.0.0.1:5187/` displays the stage. |
+| AC-04 | The `activate_scene({"scene":"focus"})` call changes the UI without a manual reload. |
+| AC-05 | The state read through MCP matches the state from `GET /api/stage`. |
+| AC-06 | An invalid scene input is rejected and leaves the state unchanged. |
+| AC-07 | A reset returns the `welcome` scene and does not change `revision` if the state is already initial. |
+| AC-08 | No call introduces log output on stdout. |
+| AC-09 | `celebration` produces confetti only once per revision, for a limited duration. |
+| AC-10 | All visual effects use local assets included in the same project. |
+| AC-11 | Closing the MCP process also stops the HTTP listener. |
+| AC-12 | The demo works without administrator permissions in a correctly configured Windows development environment. |
+| AC-13 | No HTTP API can write or modify state. |
+| AC-14 | The dashboard has a clear indicator that it is disconnected from the local process. |
+| AC-15 | The Stage Director name and graphics are reusable without fixed references to WPC. |
+
+---
+
+## 13. Demo scenarios (narrative requirements, not a plan)
+
+To verify that the product is effective in a live setting, support at least three natural-language narratives:
+
+| Scenario | Example request | Expected tools | On-screen result |
+|---|---|---|---|
+| Opening | “We're starting a technical talk. We need fewer distractions.” | `get_stage_status`, `activate_scene(focus)` | Dark stage, `FOCUS MODE` title. |
+| Change of pace | “The audience needs some energy!” | `activate_scene(energy)` | Purple/orange colors and more dynamic lights. |
+| Finale | “We're done. Let's have a grand finale!” | `activate_scene(celebration)` | Thank-you screen and confetti. |
+
+The product must not depend on executing all three scenarios exactly or on a specific call order: each tool must work independently. The message to communicate to the audience is: **“The AI chooses the tool; the C# process performs the action; the browser shows its effect.”**
+
+---
+
+## 14. Constraints to pass to the next plan generator
+
+This document is **the contractual input** for any future implementation plan. The future plan must respect the following invariants without changing them implicitly:
+
+- **A single C# Console project on .NET 10.**
+- **Official MCP SDK and stdio transport.**
+- **No ASP.NET Core, Azure Functions, cloud, database, or runtime dependency on Node.js.**
+- **A single process** hosting both MCP and the localhost HTTP server.
+- **Two required functional tools** (`get_stage_status`, `activate_scene`); **a third reset tool is recommended**.
+- **Four finite scenes** (`welcome`, `focus`, `energy`, `celebration`), with no arbitrary commands.
+- **Static, read-only local web page**; no mutable endpoints.
+- **HTML/CSS/JS assets in the same project**, preferably embedded.
+- **No destructive operations, modifications to user files, or hardware access.**
+- **Reference client: VS Code + GitHub Copilot**, configured as a local stdio MCP server.
+- **Repeatability and reliability on stage** take priority over technological complexity.
+
+This specification does **not** prescribe implementation phases, development priorities, estimates, assignments, milestones, or a backlog.
+
+---
+
+## 15. Official technical references
+
+Recheck these references when generating the plan, because the SDK and client configurations may evolve:
+
+1. [MCP C# SDK — official repository](https://github.com/modelcontextprotocol/csharp-sdk)
+2. [MCP C# SDK — Getting Started](https://csharp.sdk.modelcontextprotocol.io/concepts/getting-started.html)
+3. [MCP — 2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28)
+4. [MCP — stdio transport (specification)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/stdio.mdx)
+5. [VS Code — Add MCP servers](https://code.visualstudio.com/docs/agent-customization/mcp-servers)
+6. [VS Code — MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
+7. [.NET — System.Net.HttpListener](https://learn.microsoft.com/en-us/dotnet/api/system.net.httplistener?view=net-10.0)
