@@ -37,7 +37,7 @@ var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
 var resourceTags = {
   'azd-env-name': environmentName
   project: 'mcp-demos'
-  demo: '03'
+  demo: '04'
 }
 var alwaysReady =  [
   {

@@ -33,14 +33,14 @@ The template exposes the resource group name, Foundry account name and
 endpoint, project name, and deployment name as AZD outputs. It does not expose
 keys or other secrets.
 
-## PizzaOps resources (Demo 03)
+## PizzaOps resources (Demo 04)
 
 The root `main.bicep` also invokes `modules/pizzaops.bicep` in that same
 resource group. It adds one Linux Flex Consumption Functions app and plan, one
 Linux App Service dashboard and plan, one shared StorageV2 account, the
 `PizzaOpsOvens` and `PizzaOpsEvents` tables, a private Flex deployment
 container, Application Insights, and its Log Analytics workspace. Every
-PizzaOps resource is tagged `demo: '03'`; existing Demo 02 names, tags,
+PizzaOps resource is tagged `demo: '04'`; existing Demo 02 names, tags,
 outputs remain unchanged. The root `postprovision` hook retains its local
 behavior.
 
@@ -281,7 +281,7 @@ proof of runtime availability or a successful Azure deployment.
 Provisioning creates empty tables. Deployment never seeds/resets them or
 retrieves the MCP key. After deployment, `/health/live` should respond; an
 empty or incomplete kitchen correctly makes `/health/ready` return 503.
-Use the separately authorized [operator procedure](../src/MCP-Demos03-PizzaOps/README.md#operator-reset-and-status)
+Use the separately authorized [operator procedure](../src/MCP-Demos04-PizzaOps/README.md#operator-reset-and-status)
 to pause/drain calls, explicitly reset, and verify status before resuming.
 Then verify readiness, dashboard state, real managed-identity/RBAC behavior,
 and authenticated MCP discovery in Task 13. A failed provision/deploy does

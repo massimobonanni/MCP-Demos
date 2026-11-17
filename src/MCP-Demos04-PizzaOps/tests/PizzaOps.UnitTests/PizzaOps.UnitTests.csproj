@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PizzaOps.Functions\PizzaOps.Functions.csproj" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
@@ -16,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\PizzaOps.Functions\PizzaOps.Functions.csproj" />
     <ProjectReference Include="..\..\src\PizzaOps.DemoAdmin\PizzaOps.DemoAdmin.csproj" />
     <ProjectReference Include="..\..\src\PizzaOps.Storage\PizzaOps.Storage.csproj" />
     <ProjectReference Include="..\..\src\PizzaOps.Core\PizzaOps.Core.csproj" />

@@ -21,7 +21,7 @@ try {
     $null = New-Item -ItemType Directory -Path $testRoot
     # Copy only source-controlled/nonignored inputs, never the active AZD environment or build outputs.
     $files = & git -C $repositoryRoot ls-files --cached --others --exclude-standard -- `
-        azure.yaml global.json infra scripts/azd src/MCP-Demos03-PizzaOps
+        azure.yaml global.json infra scripts/azd src/MCP-Demos04-PizzaOps
     if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate packaging inputs.' }
     foreach ($file in ($files | Sort-Object -Unique)) {
         $destination = Join-Path $testRoot $file
@@ -43,7 +43,7 @@ try {
     $env:CustomAfterMicrosoftCommonTargets = Join-Path $PSScriptRoot 'PackageSdkProbe.targets'
     $env:PIZZAOPS_PACKAGE_EVIDENCE = $evidence
 
-    Push-Location (Join-Path $testRoot 'src\MCP-Demos03-PizzaOps')
+    Push-Location (Join-Path $testRoot 'src\MCP-Demos04-PizzaOps')
     try {
         $expectedSdk = (& dotnet --version).Trim()
         if ($LASTEXITCODE -ne 0 -or $expectedSdk -notmatch '^10\.0\.\d+$') {
@@ -61,7 +61,7 @@ try {
         & azd env new pizzaops-offline --no-prompt
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated local AZD environment.' }
 
-        & dotnet publish .\src\MCP-Demos03-PizzaOps\src\PizzaOps.Functions\PizzaOps.Functions.csproj `
+        & dotnet publish .\src\MCP-Demos04-PizzaOps\src\PizzaOps.Functions\PizzaOps.Functions.csproj `
             --configuration Release --artifacts-path (Join-Path $temp 'functions-artifacts') `
             --output (Join-Path $temp 'functions-publish') --nologo
         if ($LASTEXITCODE -ne 0) { throw 'Functions publish with external artifacts failed.' }

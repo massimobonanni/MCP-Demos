@@ -461,9 +461,9 @@ To run PizzaOps locally rather than only package it, use the isolated
 Azurite/Functions/Dashboard setup. On Windows, from the repository root:
 
 ```powershell
-pwsh -NoProfile -File .\src\MCP-Demos03-PizzaOps\scripts\Start-Local.ps1
+pwsh -NoProfile -File .\src\MCP-Demos04-PizzaOps\scripts\Start-Local.ps1
 # Stop using the RunId printed by the start command:
-pwsh -NoProfile -File .\src\MCP-Demos03-PizzaOps\scripts\Stop-Local.ps1 -RunId <run-id>
+pwsh -NoProfile -File .\src\MCP-Demos04-PizzaOps\scripts\Stop-Local.ps1 -RunId <run-id>
 ```
 
 This local runtime uses in-memory Azurite and per-run tables; it is separate

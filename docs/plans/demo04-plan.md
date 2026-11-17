@@ -20,7 +20,7 @@ This is an implementation plan, not evidence that any application has been built
 
 ### Repository baseline
 
-The functional source is [demo03.md](C:/Sviluppo/MCP-Demos/docs/descriptions/demo03.md). It is currently an untracked, user-provided document; preserve it and do not overwrite it as part of implementation.
+The functional source is [demo04.md](../descriptions/demo04.md), which describes the PizzaOps demo now numbered 04.
 
 The repository already contains:
 
@@ -65,10 +65,10 @@ Exact SDK, Functions build SDK/worker, MCP extension, Core Tools, Inspector, tes
 
 ### Planned layout
 
-Use `src\MCP-Demos03-PizzaOps` as specified, without renaming sibling demos. Normalize the inconsistent dashboard names in the description to **PizzaOps.Dashboard** and place the admin utility alongside the other PizzaOps projects, not in a second `tools` tree.
+Use `src\MCP-Demos04-PizzaOps` as specified, without renaming sibling demos. Normalize the inconsistent dashboard names in the description to **PizzaOps.Dashboard** and place the admin utility alongside the other PizzaOps projects, not in a second `tools` tree.
 
 ```text
-src\MCP-Demos03-PizzaOps\
+src\MCP-Demos04-PizzaOps\
   PizzaOps.slnx
   global.json
   Directory.Build.props
@@ -168,7 +168,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 Task 05 remains blocked: local legacy-protocol tests succeeded with the C#
 client, Inspector and Copilot CLI, and the user accepted the older revision
 for now. The intended VS Code presenter configuration has not been verified; see
-[`compatibility.md`](../../src/MCP-Demos03-PizzaOps/docs/compatibility.md).
+[`compatibility.md`](../../src/MCP-Demos04-PizzaOps/docs/compatibility.md).
 
 Task 11 infrastructure authoring is complete: the root Bicep project and
 PizzaOps module, environment parameters, abbreviations, and infrastructure
@@ -185,7 +185,7 @@ marking this task Done. Task 05 also remains blocked as noted above.
 Task 12 completed locally on 2026-11-17: the root manifest defines exactly
 two PizzaOps C# services with matching discovery tags, preserving the existing
 nonsecret output contract and Demo 02 local hook behavior. Both root-invoked
-AZD 1.38.0 packages passed with `--cwd .\src\MCP-Demos03-PizzaOps --all`;
+AZD 1.38.0 packages passed with `--cwd .\src\MCP-Demos04-PizzaOps --all`;
 actual publish SDK evidence was 10.0.404, while the initial bare-root probe
 incorrectly used the installed SDK 11 preview. ZIP/runtime/worker-indexing
 checks passed. All 13 offline Demo 02 hook checks passed, including explicit
@@ -216,7 +216,7 @@ Recommended execution is the numbered order. True dependencies are listed below:
 
 ### How to use the implementation prompts
 
-Attach this plan and `docs\descriptions\demo03.md` to each implementation conversation, then copy the relevant prompt. Common requirements for every prompt:
+Attach this plan and `docs\descriptions\demo04.md` to each implementation conversation, then copy the relevant prompt. Common requirements for every prompt:
 
 - Implement only that task and its tightly coupled documentation/tests. Read existing work and preserve other demos and user edits.
 - Do not add services, tools, architectural patterns, or implicit cloud actions beyond this plan.
@@ -228,7 +228,7 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **MVP critical:** Yes. **Dependencies:** None.
 
-**Deliverables and locations:** Scoped solution, five production projects, two focused test projects, scoped build/package configuration, initial README and compatibility record under `src\MCP-Demos03-PizzaOps`.
+**Deliverables and locations:** Scoped solution, five production projects, two focused test projects, scoped build/package configuration, initial README and compatibility record under `src\MCP-Demos04-PizzaOps`.
 
 **Work:**
 
@@ -245,7 +245,6 @@ Attach this plan and `docs\descriptions\demo03.md` to each implementation conver
 
 **Implementation prompt:**
 
-> Implement Task 01 of the attached PizzaOps plan. Scaffold the scoped .NET 10 solution at src\MCP-Demos03-PizzaOps with Core, Storage, Functions, Dashboard, DemoAdmin, and the two test projects. Verify the current official Functions isolated-worker/MCP template and pin compatible SDK/package versions. Keep package management, analyzers, and SDK selection scoped so the existing demos are unaffected. Add the initial no-cloud CI validation workflow and compatibility/prerequisite documentation. Build the projects, verify dependency boundaries and SDK selection, and stop before implementing the kitchen behavior. When you complete the task, update the tasks table in the plan.
 
 ### Task 02 - Implement domain rules and stable application contracts
 
@@ -394,8 +393,8 @@ fields, timestamp, and ETag; distinct repeated test events; and an explicit
 warning when the local event table is unavailable. The extension advertises
 generic resource/prompt support but exposes no entries or admin tools.
 Changed-file formatting/analyzer verification passed. See the scoped
-[`README.md`](../../src/MCP-Demos03-PizzaOps/README.md) for reproduction and
-[`compatibility.md`](../../src/MCP-Demos03-PizzaOps/docs/compatibility.md) for
+[`README.md`](../../src/MCP-Demos04-PizzaOps/README.md) for reproduction and
+[`compatibility.md`](../../src/MCP-Demos04-PizzaOps/docs/compatibility.md) for
 the unchanged presenter/protocol limitation; Task 05 is not unblocked here.
 
 **Implementation prompt:**
@@ -453,7 +452,7 @@ reset, repair, PASS and rejection were inspected at 1920x1080, along with storag
 failures, connection loss, encoded event text, bounded feed, local assets and
 reduced motion. Local event-timestamp-to-DOM observations were 953-979 ms; this is
 not stage-network evidence. Details and the repeatable test command are in the
-[PizzaOps README](../../src/MCP-Demos03-PizzaOps/README.md#live-audience-dashboard).
+[PizzaOps README](../../src/MCP-Demos04-PizzaOps/README.md#live-audience-dashboard).
 Remote MCP-to-dashboard and stage verification remain Tasks 10 and 13.
 
 **Implementation prompt:**
@@ -499,7 +498,7 @@ rejection in both runs; degradation/stale indicators appeared in 889/833 ms.
 Build, formatting and the transitive vulnerability gate passed. No Azure
 deployment occurred. Exact commands, tool versions, fault boundaries and
 remaining presenter/Azure gates are in the
-[PizzaOps README](../../src/MCP-Demos03-PizzaOps/README.md#repeatable-local-reliability-verification).
+[PizzaOps README](../../src/MCP-Demos04-PizzaOps/README.md#repeatable-local-reliability-verification).
 
 **Implementation prompt:**
 
@@ -513,7 +512,7 @@ remaining presenter/Azure gates are in the
 
 **Work:**
 
-- Add the cohesive resource-group module and agreed resources; preserve all Demo 02 names, existing outputs and the root subscription scope. Use `demo: 03` on PizzaOps resources without rewriting Demo 02 tags.
+- Add the cohesive resource-group module and agreed resources; preserve all Demo 02 names, existing outputs and the root subscription scope. Use `demo: 04` on PizzaOps resources without rewriting Demo 02 tags.
 - Reuse existing resource-name abbreviations and collision-resistant names. Provision the two tables and the Flex deployment blob container declaratively.
 - Configure system-assigned identities, Functions Table Contributor, dashboard Table Reader, optional explicitly supplied operator data-plane role, and the documented host/deployment storage roles. Table access does not authorize Functions host blobs; deployment storage has its own authentication settings.
 - Use identity-based host storage and managed-identity Flex deployment storage. Disable shared-key access only with the complete identity path working; do not add Key Vault or distribute account keys to hide missing RBAC.
@@ -631,8 +630,8 @@ The timings below are the requested **presentation cues**, not implementation ef
 Example command shapes to finalize and verify during implementation:
 
 ```powershell
-dotnet run --project .\src\MCP-Demos03-PizzaOps\PizzaOps.DemoAdmin -- reset --environment demo
-dotnet run --project .\src\MCP-Demos03-PizzaOps\PizzaOps.DemoAdmin -- status --environment demo
+dotnet run --project .\src\MCP-Demos04-PizzaOps\PizzaOps.DemoAdmin -- reset --environment demo
+dotnet run --project .\src\MCP-Demos04-PizzaOps\PizzaOps.DemoAdmin -- status --environment demo
 ```
 
 The configured `demo` environment is illustrative; never assume it is currently selected. Reset requires its target configuration and maintenance acknowledgement.

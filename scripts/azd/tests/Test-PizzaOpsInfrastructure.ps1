@@ -4,7 +4,6 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $names = @('AZURE_ENV_NAME', 'AZURE_SUBSCRIPTION_ID', 'AZURE_LOCATION',
-    'PIZZAOPS_PROFILE', 'PIZZAOPS_FUNCTIONS_ALWAYS_READY_HTTP_INSTANCES',
     'PIZZAOPS_OPERATOR_PRINCIPAL_ID', 'PIZZAOPS_OPERATOR_PRINCIPAL_TYPE')
 $original = @{}
 foreach ($name in $names) { $original[$name] = [Environment]::GetEnvironmentVariable($name) }
@@ -23,6 +22,9 @@ try {
     $template = $json | ConvertFrom-Json -Depth 100
     $module = @($template.resources | Where-Object { $_.name -like "*pizzaops-*" })
     if ($module.Count -ne 1) { throw 'Expected one PizzaOps module.' }
+    if ($module[0].properties.template.variables.resourceTags.demo -cne '04') {
+        throw 'PizzaOps resources must use the Demo 04 metadata tag.'
+    }
     $sites = @($module[0].properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Web/sites' })
     $functionApp = @($sites | Where-Object { $_.kind -eq 'functionapp,linux' })
     if ($functionApp.Count -ne 1 -or
