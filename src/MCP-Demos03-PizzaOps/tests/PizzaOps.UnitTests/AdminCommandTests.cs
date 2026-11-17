@@ -1,6 +1,8 @@
 using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
+using PizzaOps.Core.Application;
 using PizzaOps.Core.Interfaces;
+using PizzaOps.DemoAdmin;
 using PizzaOps.DemoAdmin.Commands;
 using PizzaOps.DemoAdmin.Commands.Reset;
 using PizzaOps.DemoAdmin.Commands.Status;
@@ -9,6 +11,39 @@ namespace PizzaOps.UnitTests;
 
 public sealed class AdminCommandTests
 {
+    [Fact]
+    public void DevelopmentHostResolvesReadAndResetServicesUsingTheSameRepositories()
+    {
+        var directory = Directory.CreateTempSubdirectory("PizzaOps.AdminTests.");
+        try
+        {
+            File.WriteAllText(Path.Combine(directory.FullName, "appsettings.Development.json"), """
+                {
+                  "PizzaOps": {
+                    "TableStorage": {
+                      "Mode": "Azurite",
+                      "AzuriteConnectionString": "UseDevelopmentStorage=true"
+                    }
+                  }
+                }
+                """);
+
+            using var host = AdminCommandService.CreateHost("Development", directory.FullName);
+            Assert.IsType<KitchenReadService>(host.Services.GetRequiredService<IKitchenReadService>());
+            Assert.IsType<KitchenResetService>(host.Services.GetRequiredService<IKitchenResetService>());
+            Assert.Same(
+                host.Services.GetRequiredService<IOvenRepository>(),
+                host.Services.GetRequiredService<IOvenReader>());
+            Assert.Same(
+                host.Services.GetRequiredService<IKitchenEventRepository>(),
+                host.Services.GetRequiredService<IKitchenEventReader>());
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("reset")]
     [InlineData("reset", "--environment", "demo")]

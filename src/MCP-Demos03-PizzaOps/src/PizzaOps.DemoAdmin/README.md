@@ -8,6 +8,9 @@ services and Table Storage adapter. It is the only supported way to seed or
 reset kitchen data; reset is not exposed through MCP, the Functions host, or
 the Dashboard.
 
+The read services use `IOvenReader` and `IKitchenEventReader`, registered as
+aliases of the same singleton repositories used by reset.
+
 The CLI has two commands:
 
 - `status` reads the selected kitchen and reports whether its oven state and

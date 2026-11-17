@@ -87,11 +87,12 @@ internal sealed class AdminCommandService : IAdminCommandService
         }
     }
 
-    private static IHost CreateHost(string environmentName)
+    internal static IHost CreateHost(string environmentName, string? contentRootPath = null)
     {
         var hostBuilder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             Args = [],
+            ContentRootPath = contentRootPath,
             EnvironmentName = environmentName
         });
 
@@ -179,6 +180,10 @@ internal sealed class AdminCommandService : IAdminCommandService
             serviceProvider.GetRequiredService<TableKitchenRepository>());
         hostBuilder.Services.AddSingleton<IKitchenTableMaintenance>(serviceProvider =>
             serviceProvider.GetRequiredService<TableKitchenRepository>());
+        hostBuilder.Services.AddSingleton<IOvenReader>(serviceProvider =>
+            serviceProvider.GetRequiredService<IOvenRepository>());
+        hostBuilder.Services.AddSingleton<IKitchenEventReader>(serviceProvider =>
+            serviceProvider.GetRequiredService<IKitchenEventRepository>());
         hostBuilder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         hostBuilder.Services.AddSingleton<IKitchenReadService, KitchenReadService>();
         hostBuilder.Services.AddSingleton<IKitchenResetService, KitchenResetService>();
