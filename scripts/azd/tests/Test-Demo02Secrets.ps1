@@ -10,12 +10,17 @@ $hook = Join-Path $PSScriptRoot '..\initialize-demo02-secrets.ps1'
 $testKey = 'demo02-offline-test-"quoted"\key'
 
 if ($Case) {
+    $env:DEMO02_SKIP_LOCAL_SECRETS = $null
+    $env:GITHUB_ACTIONS = 'true'
     $env:AZURE_SUBSCRIPTION_ID = '00000000-0000-0000-0000-000000000002'
     $env:resourceGroupName = 'rg-demo02-offline'
     $env:foundryAccountName = 'demo02-offline'
     $env:foundryEndpoint = 'https://demo02-offline.cognitiveservices.azure.com/'
 
     function az {
+        if ($Case -in @('ci-skip', 'local-skip', 'invalid-skip')) {
+            throw 'The skip path must not invoke Azure CLI.'
+        }
         $expected = @(
             'cognitiveservices', 'account', 'keys', 'list',
             '--subscription', $env:AZURE_SUBSCRIPTION_ID,
@@ -38,6 +43,13 @@ if ($Case) {
             'empty-key' { Write-Output '""' }
             default { ConvertTo-Json -InputObject $testKey -Compress }
         }
+    }
+
+    if ($Case -in @('ci-skip', 'local-skip', 'invalid-skip')) {
+        $env:DEMO02_SKIP_LOCAL_SECRETS = 'true'
+        if ($Case -eq 'local-skip') { $env:GITHUB_ACTIONS = $null }
+        if ($Case -eq 'invalid-skip') { $env:DEMO02_SKIP_LOCAL_SECRETS = 'yes' }
+        function dotnet { throw 'The skip path must not invoke .NET.' }
     }
 
     if ($Case -eq 'import-failure') {
@@ -67,6 +79,8 @@ $originalHome = $env:HOME
 $originalCliHome = $env:DOTNET_CLI_HOME
 $originalFirstRun = $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE
 $originalTelemetry = $env:DOTNET_CLI_TELEMETRY_OPTOUT
+$originalSkip = $env:DEMO02_SKIP_LOCAL_SECRETS
+$originalActions = $env:GITHUB_ACTIONS
 
 try {
     $null = New-Item -ItemType Directory -Path $testRoot
@@ -75,6 +89,7 @@ try {
     $env:DOTNET_CLI_HOME = $testRoot
     $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    $env:DEMO02_SKIP_LOCAL_SECRETS = $null
     $project = Join-Path $PSScriptRoot '..\..\..\src\MCP-Demos.02-MCPChat\MCP-Demos.02-MCPChat.csproj'
     [xml] $projectXml = Get-Content -LiteralPath $project -Raw
     $secretId = [string] $projectXml.Project.PropertyGroup.UserSecretsId
@@ -92,6 +107,8 @@ try {
         'malformed-key' = 'did not return a nonempty Foundry account key'
         'empty-key' = 'did not return a nonempty Foundry account key'
         'import-failure' = 'Could not save Demo 02 user secrets'
+        'local-skip' = 'allowed only in GitHub Actions'
+        'invalid-skip' = 'allowed only in GitHub Actions'
     }
     foreach ($testCase in $cases.Keys) {
         $output = & pwsh -NoProfile -File $PSCommandPath -Case $testCase 2>&1
@@ -105,6 +122,13 @@ try {
         }
         Write-Host "PASS: $testCase (nonzero exit, safe diagnostic, no secret store write)."
     }
+
+    $output = & pwsh -NoProfile -File $PSCommandPath -Case ci-skip 2>&1
+    if ($LASTEXITCODE -ne 0 -or -not (($output -join "`n").Contains('no key retrieved')) -or
+        (Test-Path -LiteralPath $store)) {
+        throw 'CI opt-in must skip both CLIs and leave the user-secret store absent.'
+    }
+    Write-Host 'PASS: explicit CI skip performs no key retrieval or secret import.'
 
     foreach ($iteration in 1..2) {
         if ($iteration -eq 2) {
@@ -156,6 +180,16 @@ try {
         throw "AZD did not propagate the safe hook failure (exit $exitCode); output withheld."
     }
     Write-Host 'PASS: installed AZD executes postprovision, loads outputs, and propagates hook failure without provisioning.'
+
+    $env:GITHUB_ACTIONS = 'true'
+    $env:DEMO02_SKIP_LOCAL_SECRETS = 'true'
+    $before = Get-Content -LiteralPath $store -Raw
+    $output = & azd hooks run postprovision --cwd $testRoot -e demo02-offline --no-prompt 2>&1
+    if ($LASTEXITCODE -ne 0 -or -not (($output -join "`n").Contains('no key retrieved')) -or
+        (Get-Content -LiteralPath $store -Raw) -cne $before) {
+        throw 'AZD CI opt-in did not skip local secret materialization safely.'
+    }
+    Write-Host 'PASS: installed AZD honors explicit CI skip without changing existing user secrets.'
 }
 finally {
     $env:APPDATA = $originalAppData
@@ -163,6 +197,8 @@ finally {
     $env:DOTNET_CLI_HOME = $originalCliHome
     $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = $originalFirstRun
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = $originalTelemetry
+    $env:DEMO02_SKIP_LOCAL_SECRETS = $originalSkip
+    $env:GITHUB_ACTIONS = $originalActions
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }

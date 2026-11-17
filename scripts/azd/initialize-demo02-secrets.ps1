@@ -8,6 +8,16 @@ $keyOutput = $null
 $secretsJson = $null
 
 try {
+    if (-not [string]::IsNullOrEmpty($env:DEMO02_SKIP_LOCAL_SECRETS)) {
+        $failureMessage = 'DEMO02_SKIP_LOCAL_SECRETS must be true and is allowed only in GitHub Actions (GITHUB_ACTIONS=true). Unset it for local provisioning.'
+        if ($env:DEMO02_SKIP_LOCAL_SECRETS -cne 'true' -or $env:GITHUB_ACTIONS -cne 'true') {
+            throw $failureMessage
+        }
+
+        Write-Host 'Skipping Demo 02 local user-secret materialization explicitly in GitHub Actions; no key retrieved.'
+        return
+    }
+
     foreach ($command in @('az', 'dotnet')) {
         $failureMessage = "Required command '$command' was not found. Install Azure CLI and the .NET 10 SDK and ensure both are on PATH."
         $null = Get-Command $command -ErrorAction Stop

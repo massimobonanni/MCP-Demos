@@ -42,21 +42,6 @@ param subscriptionId string
 ])
 param location string
 
-@description('Optional Azure region for PizzaOps. Defaults to the AZURE_LOCATION region.')
-param pizzaOpsLocation string = ''
-
-@description('PizzaOps hosting profile. The demo profile enables App Service Always On.')
-@allowed([
-  'dev'
-  'demo'
-])
-param pizzaOpsProfile string = 'dev'
-
-@description('Number of Flex HTTP always-ready instances. Keep at zero until the MCP scale group and cost are approved.')
-@minValue(0)
-@maxValue(1)
-param pizzaOpsFunctionsAlwaysReadyHttpInstances int = 0
-
 @description('Optional operator object ID to authorize reset access to the two PizzaOps tables.')
 param pizzaOpsOperatorPrincipalId string = ''
 
@@ -98,9 +83,7 @@ module pizzaops 'modules/pizzaops.bicep' = {
   scope: resourceGroup
   params: {
     environmentName: environmentName
-    location: empty(pizzaOpsLocation) ? location : pizzaOpsLocation
-    profile: pizzaOpsProfile
-    functionsAlwaysReadyHttpInstances: pizzaOpsFunctionsAlwaysReadyHttpInstances
+    location: location
     operatorPrincipalId: pizzaOpsOperatorPrincipalId
     operatorPrincipalType: pizzaOpsOperatorPrincipalType
   }

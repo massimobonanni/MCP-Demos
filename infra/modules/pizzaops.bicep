@@ -6,18 +6,6 @@ param environmentName string
 @minLength(1)
 param location string
 
-@description('Hosting profile. The demo profile enables App Service Always On.')
-@allowed([
-  'dev'
-  'demo'
-])
-param profile string
-
-@description('Flex HTTP always-ready instance count. Leave at zero until the MCP scale group and cost are approved.')
-@minValue(0)
-@maxValue(1)
-param functionsAlwaysReadyHttpInstances int
-
 @description('Optional object ID of an operator authorized to manage the PizzaOps application tables.')
 param operatorPrincipalId string
 
@@ -51,14 +39,12 @@ var resourceTags = {
   project: 'mcp-demos'
   demo: '03'
 }
-var alwaysReady = functionsAlwaysReadyHttpInstances == 0
-  ? []
-  : [
-      {
-        name: 'http'
-        instanceCount: functionsAlwaysReadyHttpInstances
-      }
-    ]
+var alwaysReady =  [
+  {
+    name: 'http'
+    instanceCount: 1
+  }
+]
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
@@ -143,15 +129,10 @@ resource dashboardPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: dashboardPlanName
   location: location
   kind: 'linux'
-  sku: profile == 'demo'
-    ? {
-        name: 'S1'
-        tier: 'Standard'
-      }
-    : {
-        name: 'B1'
-        tier: 'Basic'
-      }
+  sku: {
+    name: 'B1'
+    tier: 'Basic'
+  }
   properties: {
     reserved: true
   }
@@ -192,15 +173,15 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       }
     }
   }
-  tags: resourceTags
+  tags: union(resourceTags, {
+    'azd-service-name': 'pizzaops-functions'
+  })
 }
 
 resource functionAppSettings 'Microsoft.Web/sites/config@2024-04-01' = {
   parent: functionApp
   name: 'appsettings'
   properties: {
-    FUNCTIONS_EXTENSION_VERSION: '~4'
-    FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
     AzureWebJobsStorage__accountName: storage.name
     AzureWebJobsStorage__credential: 'managedidentity'
     APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString
@@ -225,7 +206,7 @@ resource dashboardApp 'Microsoft.Web/sites@2024-04-01' = {
     httpsOnly: true
     serverFarmId: dashboardPlan.id
     siteConfig: {
-      alwaysOn: profile == 'demo'
+      alwaysOn: true
       ftpsState: 'Disabled'
       healthCheckPath: '/health/ready'
       http20Enabled: true
@@ -234,7 +215,9 @@ resource dashboardApp 'Microsoft.Web/sites@2024-04-01' = {
       webSocketsEnabled: true
     }
   }
-  tags: resourceTags
+  tags: union(resourceTags, {
+    'azd-service-name': 'pizzaops-dashboard'
+  })
 }
 
 resource dashboardAppSettings 'Microsoft.Web/sites/config@2024-04-01' = {

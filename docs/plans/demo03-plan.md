@@ -161,7 +161,7 @@ The table below is the manual implementation tracker. Use only **ToDo**, **Done*
 | 09 | Build the live, accessible Blazor dashboard | Done |
 | 10 | Complete telemetry and local reliability verification | Done |
 | 11 | Extend Bicep with minimal PizzaOps resources and RBAC | Blocked |
-| 12 | Integrate AZD packaging and reproducible deployment automation | ToDo |
+| 12 | Integrate AZD packaging and reproducible deployment automation | Done |
 | 13 | Verify the Azure deployment and presenter Copilot profile | ToDo |
 | 14 | Produce and rehearse the ten-minute presenter runbook | ToDo |
 
@@ -181,6 +181,24 @@ provisioning until the target is confirmed and approved. After approval,
 validate provider capabilities and cost, then review a subscription-scope
 what-if for intended additions and preservation of Demo 02 resources before
 marking this task Done. Task 05 also remains blocked as noted above.
+
+Task 12 completed locally on 2026-11-17: the root manifest defines exactly
+two PizzaOps C# services with matching discovery tags, preserving the existing
+nonsecret output contract and Demo 02 local hook behavior. Both root-invoked
+AZD 1.38.0 packages passed with `--cwd .\src\MCP-Demos03-PizzaOps --all`;
+actual publish SDK evidence was 10.0.404, while the initial bare-root probe
+incorrectly used the installed SDK 11 preview. ZIP/runtime/worker-indexing
+checks passed. All 13 offline Demo 02 hook checks passed, including explicit
+CI-only skipping without key retrieval. Bicep 0.49.2 compilation, dev/demo
+parameters with the agreed shared `AZURE_LOCATION`, discovery contracts and
+actionlint 1.7.7 workflow checks passed. CI includes these no-cloud checks;
+the manual OIDC workflow requires an existing reviewer-protected environment,
+explicit target confirmation and deployment serialization. See the
+[infrastructure lifecycle guide](../../infra/README.md) for setup, native Flex
+deployment, package rollback and shared-resource cleanup risks. GitHub/Azure
+protection and federation setup remain administrator prerequisites; no cloud
+workflow, provision, deploy, what-if, reset or MCP-key retrieval was run.
+This completion does not close Task 11's cloud gates or Task 13 verification.
 
 ### Phase map and gates
 
@@ -540,7 +558,7 @@ remaining presenter/Azure gates are in the
 
 **Implementation prompt:**
 
-> Implement Task 12 of the PizzaOps plan. Add the two PizzaOps services to root azure.yaml, align Bicep discovery tags and nonsecret outputs, and preserve the Demo 02 postprovision behavior. Verify root-invoked AZD packaging honors the scoped .NET 10 SDK and supports Flex deployment. Complete no-cloud CI and a protected, explicit-environment OIDC deployment workflow, handling the existing local-secret hook deliberately in CI. Run packaging and the existing offline hook regression suite. Document provision/deploy/reset distinctions and shared-resource cleanup risk; do not provision, deploy, auto-reset, or retrieve the MCP key.
+> Implement Task 12 of the PizzaOps plan. Add the two PizzaOps services to root azure.yaml, align Bicep discovery tags and nonsecret outputs, and preserve the Demo 02 postprovision behavior. Verify root-invoked AZD packaging honors the scoped .NET 10 SDK and supports Flex deployment. Complete no-cloud CI and a protected, explicit-environment OIDC deployment workflow, handling the existing local-secret hook deliberately in CI. Run packaging and the existing offline hook regression suite. Document provision/deploy/reset distinctions and shared-resource cleanup risk; do not provision, deploy, auto-reset, or retrieve the MCP key. When the task is completed, update the task table in the plan.
 
 ### Task 13 - Verify the Azure deployment and presenter Copilot profile
 
@@ -569,7 +587,7 @@ remaining presenter/Azure gates are in the
 
 **Implementation prompt:**
 
-> Execute Task 13 of the PizzaOps plan only after confirming the exact Azure target, scope, required permissions and costs. Provision/deploy through the validated AZD workflow, then prove Functions host/deployment storage and application Table access use managed identity, including live dashboard write denial. Create a secret-free native Copilot configuration and a secure process-environment presenter launcher that does not affect other VS Code sessions. Verify key rejection/acceptance, exactly four tools, the full remote repair/bake/reject story, reset repeatability, telemetry and measured dashboard latency. Prepare an authenticated Inspector rejection fallback if Copilot declines the call. Record evidence without secrets and block completion on any failed gate.
+> Execute Task 13 of the PizzaOps plan only after confirming the exact Azure target, scope, required permissions and costs. Provision/deploy through the validated AZD workflow, then prove Functions host/deployment storage and application Table access use managed identity, including live dashboard write denial. Create a secret-free native Copilot configuration and a secure process-environment presenter launcher that does not affect other VS Code sessions. Verify key rejection/acceptance, exactly four tools, the full remote repair/bake/reject story, reset repeatability, telemetry and measured dashboard latency. Prepare an authenticated Inspector rejection fallback if Copilot declines the call. Record evidence without secrets and block completion on any failed gate. Update the tasks table when finish.
 
 ### Task 14 - Produce and rehearse the ten-minute presenter runbook
 

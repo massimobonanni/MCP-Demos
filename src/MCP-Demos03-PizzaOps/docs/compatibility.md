@@ -19,11 +19,24 @@ analyzers are configured by its `Directory.Build.props`. Neither file applies
 to the existing demos.
 
 The `global.json` is at the PizzaOps solution root, and all service projects
-are beneath it. A future AZD service configured with one of those project
-directories will resolve the SDK from this scoped file even when AZD itself is
-started at the repository root. The current root `azure.yaml` has no PizzaOps
-service entries, so AZD packaging is intentionally not configured or claimed
-as tested by this task.
+are beneath it. **Task 12 correction (2026-11-17):** service paths alone do not
+control the CLI SDK. Bare root packaging with AZD 1.38.0 used installed SDK
+11.0.100-rc.3.26522.148. Root-invoked
+`azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e <environment>` discovers
+the root manifest while both publish builds use **10.0.404**, verified by
+recording `NETCoreSdkVersion` during the actual builds. Use that explicit
+working directory for packaging/deployment; do not add a root SDK pin.
+
+The root manifest now has exactly two C# services (`function`/`appservice`),
+with matching discovery tags and nonsecret outputs. AZD 1.38.0 is the tested
+minimum (its `package` command remains labeled Beta). The Functions ZIP
+contains the worker DLL, host/extension configuration and a portable
+`dotnet` worker configuration with worker indexing enabled; SDK 1.0.0 does
+not require a legacy `functions.metadata` file. Native AZD selects the Flex
+deployment API from the provisioned plan; `remoteBuild: false` avoids an
+uncontrolled remote SDK selection. See the [deployment guide](../../../infra/README.md).
+Packaging/Bicep/offline hook checks passed; no provision, deploy, reset,
+MCP-key retrieval or live Azure runtime/RBAC verification was performed.
 
 Official references:
 

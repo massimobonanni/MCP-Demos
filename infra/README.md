@@ -4,9 +4,11 @@ This folder contains the Bicep infrastructure used by Azure Developer CLI
 (AZD), configured through `azure.yaml` (`infra.path: ./infra`, module `main`).
 The subscription-scoped entry point provisions Demo 02 and PizzaOps resources
 into the environment's resource group; it does not deploy or start either
-.NET application.
+.NET application. The root [azure.yaml](../azure.yaml) separately defines
+exactly two deployable services: `pizzaops-functions` (`function`) and
+`pizzaops-dashboard` (`appservice`). DemoAdmin and storage are not services.
 
-## Demo 02
+## Chat with tools (Demo 02)
 
 AZD starts a subscription-scoped Bicep deployment. The template creates a
 resource group whose name includes the environment (`rg-mcp-demos-<environment>`),
@@ -39,7 +41,8 @@ Linux App Service dashboard and plan, one shared StorageV2 account, the
 `PizzaOpsOvens` and `PizzaOpsEvents` tables, a private Flex deployment
 container, Application Insights, and its Log Analytics workspace. Every
 PizzaOps resource is tagged `demo: '03'`; existing Demo 02 names, tags,
-outputs, and the root `postprovision` hook remain separate and unchanged.
+outputs remain unchanged. The root `postprovision` hook retains its local
+behavior, with an explicit CI-only skip described below.
 
 ```mermaid
 flowchart TD
@@ -99,7 +102,6 @@ before a future, approved deployment:
 | AZD value | Default | Effect |
 | --- | --- | --- |
 | `PIZZAOPS_PROFILE` | `dev` | `dev` uses a Linux B1 dashboard plan with Always On disabled; `demo` uses S1 with Always On enabled. |
-| `PIZZAOPS_LOCATION` | Empty | Optional PizzaOps-only region override; the resource-group and Demo 02 Foundry region policy is not changed. |
 | `PIZZAOPS_FUNCTIONS_ALWAYS_READY_HTTP_INSTANCES` | `0` | Restricted to 0 or 1. Keep at 0 until the selected region, actual MCP trigger scale group, and incremental cost are checked and approved. |
 | `PIZZAOPS_OPERATOR_PRINCIPAL_ID` | Empty | Optional user, group, or service-principal object ID for reset-table access. |
 | `PIZZAOPS_OPERATOR_PRINCIPAL_TYPE` | `User` | Set to `Group` or `ServicePrincipal` when the optional operator ID has that type. |
@@ -113,13 +115,24 @@ WebSockets, and `/health/ready`. Both apps receive the Table endpoint and
 validated table/partition names through app settings. No MCP key is emitted
 as an output or configured by this infrastructure.
 
+On Flex Consumption, the runtime name and version are configured only through
+`functionAppConfig.runtime`. Do not add `FUNCTIONS_WORKER_RUNTIME` or
+`FUNCTIONS_WORKER_RUNTIME_VERSION` app settings; `FUNCTIONS_EXTENSION_VERSION`
+is managed by the platform and must also be omitted. These legacy settings
+can cause `azd provision` to fail with `BadRequest` even after the Function
+App has been created. After correcting the template, rerun `azd provision`
+against the same environment; this error does not require deleting resources.
+See the [Flex Consumption app-setting deprecations](https://learn.microsoft.com/azure/azure-functions/functions-app-settings#flex-consumption-plan-deprecations).
+
 The pre-existing `AZURE_LOCATION` allowlist remains the Foundry policy and
 still determines the resource-group location. It is not a statement that
 Flex .NET 10, App Service .NET 10, or the MCP extension is available there.
-Check actual runtime and service availability for the selected PizzaOps
-region before requesting target approval. If another supported region is
-needed, set `PIZZAOPS_LOCATION` without changing the existing Foundry
-allowlist.
+The AZD parameter file deliberately supplies **the same `AZURE_LOCATION` to
+both demos**; there is no `PIZZAOPS_LOCATION` environment override.
+Choose a region satisfying both Foundry and PizzaOps runtime/service
+requirements before requesting target approval. The lower-level Bicep
+`pizzaOpsLocation` parameter remains for direct template callers, but the
+root AZD workflow and CI use the shared region.
 
 For development, use a named environment such as `mcp-demos-dev` and keep
 `PIZZAOPS_PROFILE=dev`. For a demo environment, explicitly set
@@ -133,11 +146,11 @@ region and expected usage before provisioning.
 
 ## Prerequisites and parameters
 
-- Azure CLI and Azure Developer CLI (`azd`) installed.
+- Azure CLI and Azure Developer CLI (`azd`) 1.38.0 or later installed.
 - PowerShell 7 (`pwsh`) on the `PATH`, including on Linux/macOS, and a .NET SDK
   compatible with the `net10.0` project. The `postprovision` hook and the
-  `azd hooks run postprovision` command have been verified with stable AZD
-  1.37.3, without preview features.
+  `azd hooks run postprovision` command and packaging have been verified with
+  stable AZD 1.38.0. AZD still labels `package` Beta in its command help.
 - Access to the subscription and permissions to create a resource group and
   Microsoft Foundry resources.
 - The Azure CLI identity must have the
@@ -171,25 +184,151 @@ az login
 azd auth login
 
 azd env new demo02-dev
-azd env set AZURE_SUBSCRIPTION_ID <subscription-id>
-azd env set AZURE_LOCATION eastus2
-azd env set PIZZAOPS_PROFILE dev
+azd env set AZURE_SUBSCRIPTION_ID <subscription-id> -e demo02-dev
+azd env set AZURE_LOCATION eastus2 -e demo02-dev
+azd env set PIZZAOPS_PROFILE dev -e demo02-dev
 
-azd provision -e demo02-dev
+azd provision --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev
 ```
 
 Replace `demo02-dev`, the ID, and `eastus2` with the values you want. The
-region must be one of those listed above for Demo 02. An optional
-`PIZZAOPS_LOCATION` can target a separately validated region for PizzaOps.
+region must be one of those listed above for Demo 02 and also support PizzaOps.
 If the environment already exists, select it with `azd env select demo02-dev`
 and update the parameters with `azd env set` if needed. Do not run
 `azd provision`, `azd up`, or an Azure what-if until the subscription,
-environment, tenant, both regions, optional operator principal, and intended
+environment, tenant, shared region, optional operator principal, and intended
 resource changes have been reviewed and explicitly approved.
 
-Alternatively, `azd up -e demo02-dev` provisions the infrastructure and then
-attempts the application's deployment phases defined by the project. Use
-`azd provision` to deploy infrastructure resources only.
+### Package, provision, deploy, and reset are different operations
+
+Run these examples from the repository root, only against a reviewed target:
+
+```powershell
+# Local build/package only; no Azure login or resource changes.
+azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e demo02-dev --no-prompt
+# Shared infrastructure, tables and RBAC; local Demo 02 postprovision hook runs.
+azd provision --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev
+# Application code only; preserves kitchen data and does not run postprovision.
+azd deploy --cwd .\src\MCP-Demos03-PizzaOps --all -e demo02-dev
+# Combined package/provision/deploy lifecycle, not a kitchen reset.
+azd up --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev
+```
+
+**Keep the explicit `--cwd` on commands that build code.** AZD finds the root
+manifest by walking up from the PizzaOps solution. In AZD 1.38.0 a bare
+root `azd package` runs .NET from the root, not the service directory:
+verification found SDK 11 preview despite the scoped `global.json`.
+With the shown option, both actual publish builds used SDK **10.0.404**.
+There is no root SDK pin or second/custom publishing implementation.
+Use absolute `--output-path` paths when retaining packages, because relative
+paths are resolved against the selected working directory.
+
+The Function App and dashboard carry matching `azd-service-name` tags.
+AZD discovers the shared resource group through its existing `azd-env-name`
+tag; the existing camel-case Demo 02 and PizzaOps name/ID/endpoint outputs
+remain unchanged and nonsecret. No duplicate uppercase output is required.
+Discovery uses the tags, not hard-coded app names. The two
+deployable projects have stable `UserSecretsId` values so AZD initialization
+does not edit project files. AZD may materialize **nonsecret infrastructure
+outputs** in their local user-secret stores; no MCP key is an output.
+
+The Function App uses Flex (`FC1`/`FlexConsumption`), not classic Consumption.
+AZD 1.38.0's [function target](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.38.0/cli/azd/pkg/project/service_target_functionapp.go)
+reads the actual plan and chooses its Flex deployment API rather than the
+regular ZipDeploy path. Flex uses
+[One Deploy](https://learn.microsoft.com/azure/azure-functions/functions-deployment-technologies#one-deploy).
+`remoteBuild: false` sends the locally published ZIP as-is. The Bicep
+`functionAppConfig.deployment.storage` configures the private blob container
+and system identity; do not add classic `WEBSITE_RUN_FROM_PACKAGE`,
+storage keys, Oryx settings, or a parallel `func publish` pipeline.
+ZIP checks cover the .NET 10 runtime, host/extension files, and the SDK 1.0.0
+`worker.config.json` worker-indexing contract (no legacy `functions.metadata`
+file is required). This is local/package and implementation evidence, **not**
+proof of runtime availability or a successful Azure deployment.
+
+Provisioning creates empty tables. Deployment never seeds/resets them or
+retrieves the MCP key. After deployment, `/health/live` should respond; an
+empty or incomplete kitchen correctly makes `/health/ready` return 503.
+Use the separately authorized [operator procedure](../src/MCP-Demos03-PizzaOps/README.md#operator-reset-and-status)
+to pause/drain calls, explicitly reset, and verify status before resuming.
+Then verify readiness, dashboard state, real managed-identity/RBAC behavior,
+and authenticated MCP discovery in Task 13. A failed provision/deploy does
+not trigger automatic reset, rollback, or deletion.
+
+### Protected manual GitHub deployment
+
+The [CI workflow](../.github/workflows/pizzaops-ci.yml) runs without Azure
+credentials on pushes/PRs affecting PizzaOps, infrastructure, AZD scripts or
+either workflow. It retains the existing build/test/format/dependency audit
+and isolated local E2E suite, and adds Bicep/parameter/discovery validation,
+offline secret-hook regressions, and root-invoked SDK/ZIP assertions.
+It needs package/tool download access, but no Azure login or resource access.
+Actions are commit-pinned; CI uses AZD 1.38.0, Bicep 0.49.2 and the scoped SDK.
+
+The [deployment workflow](../.github/workflows/pizzaops-deploy.yml) is
+`workflow_dispatch` only and reuses that no-cloud validation before deployment.
+It allows the default branch only, requires an explicit environment plus
+matching confirmation, and serializes deployments per environment without
+canceling an in-progress resource update. `deploy` is the code-only default;
+`provision-and-deploy` explicitly includes shared Demo 02 infrastructure.
+No PR, push, or completed-CI event deploys automatically.
+
+Repository administrators must configure these prerequisites **before** dispatch:
+
+1. Create a GitHub Environment named exactly like the lowercase AZD environment.
+   Require reviewers, prevent self-review, restrict deployment branches to the
+   protected default branch, and disable approval bypass where available.
+   The workflow checks the existing environment's reviewer and branch policies
+   through the GitHub API and fails closed if they are missing/unreadable.
+   YAML does not create these protection settings. The GitHub plan must support
+   environment approvals for this repository.
+2. Configure an Entra application's federated credential with issuer
+   `https://token.actions.githubusercontent.com`, audience
+   `api://AzureADTokenExchange`, and subject
+   `repo:<owner>/<repository>:environment:<environment>`.
+   Do not use a client secret or a branch-wide OIDC subject.
+3. Set protected Environment **variables** `AZURE_ENV_NAME`, `AZURE_CLIENT_ID`,
+   `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_LOCATION`,
+   `PIZZAOPS_PROFILE`, `PIZZAOPS_FUNCTIONS_ALWAYS_READY_HTTP_INSTANCES`,
+   and `PIZZAOPS_OPERATOR_PRINCIPAL_TYPE`. Set optional
+   `PIZZAOPS_OPERATOR_PRINCIPAL_ID` deliberately (empty means no operator
+   grant). `AZURE_LOCATION` is shared by both demos. These are nonsecret
+   configuration; no keys are needed.
+4. Grant the federated identity only the target's required management rights.
+   Code-only deployment needs app deployment, discovery and deployment-output
+   read access. Root provisioning additionally creates the resource group at
+   subscription scope, manages Foundry/PizzaOps resources, and assigns RBAC.
+   Have an administrator review scoped/custom roles rather than blindly
+   granting subscription Owner. The pipeline is not the reset operator and
+   does not need application Table data access or MCP/Foundry key retrieval.
+5. Review the Task 11 what-if, region/runtime availability and costs before
+   approving provisioning. This workflow does not waive those still-open gates.
+
+The protected job signs in with `azd auth login
+--federated-credential-provider github`, initializes fresh local AZD state for
+the explicit subscription/environment, and provisions or refreshes existing
+outputs. Protected variables are the reproducible parameter source; the runner
+does not inherit a developer's `.azure` directory. Every environment operation
+is explicit and noninteractive. Packages are built once, retained with SHA-256
+checksums for 14 days, and passed to native `azd deploy --from-package`.
+Only ZIPs/checksums are uploaded, never `.azure`, logs, profiles, or keys.
+The final smoke check is dashboard liveness only; it deliberately does not
+mask a missing kitchen by seeding data.
+
+For code rollback, download the **pair** of known-good packages for a reviewed
+commit, verify their recorded SHA-256 hashes, refresh the intended environment,
+and deploy each package with the same native path:
+
+```powershell
+azd env refresh -e demo02-dev
+azd deploy pizzaops-functions --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev --from-package <absolute-functions-zip>
+azd deploy pizzaops-dashboard --cwd .\src\MCP-Demos03-PizzaOps -e demo02-dev --from-package <absolute-dashboard-zip>
+```
+
+Obtain target approval first; confirm runtime/configuration compatibility and
+recheck liveness/readiness afterward. Deploying the pair is not atomic; pause
+calls while recovering a partial rollout. Code rollback does not roll back
+Bicep, table data, identities or keys, and is never an excuse to run `azd down`.
 
 ## Automatic local configuration for Demo 02
 
@@ -223,6 +362,16 @@ and preserves other user secrets; changing the AZD environment overwrites the
 Demo 02 values for the current user. Do not use this store to distribute
 production credentials.
 
+In GitHub Actions only, the deployment job sets
+`DEMO02_SKIP_LOCAL_SECRETS=true`. The hook requires **both** that exact opt-in
+and `GITHUB_ACTIONS=true`; otherwise an attempted skip fails visibly.
+Without the opt-in, even CI retains the original fail-fast behavior.
+The skip occurs before checking outputs or invoking either CLI, logs that no
+key was retrieved, and neither lists Foundry keys nor writes local Demo 02
+secrets. This is a workflow guard, not an authentication boundary. Never set
+the flag locally to hide a broken hook. It does not skip infrastructure or
+change the local hook path, and no separate deployment implementation exists.
+
 To repeat only the local configuration without provisioning again:
 
 ```powershell
@@ -243,8 +392,9 @@ it would also display the key.
 From the repository root:
 
 ```powershell
-az bicep build --file .\infra\main.bicep --stdout | Out-Null
+pwsh -NoProfile -File .\scripts\azd\tests\Test-PizzaOpsInfrastructure.ps1
 pwsh -NoProfile -File .\scripts\azd\tests\Test-Demo02Secrets.ps1
+pwsh -NoProfile -File .\scripts\azd\tests\Test-PizzaOpsPackage.ps1
 ```
 
 The test uses a fake key and an isolated temporary profile. It verifies the
@@ -257,6 +407,18 @@ verifying environment loading and error propagation before any request to
 Azure. It does not provision resources, retrieve real keys, or modify the
 repository's selected AZD environment, and it removes the temporary profile
 when finished.
+
+The expanded hook suite also checks invalid/local skip attempts, explicit CI
+skip without either CLI call, default CI behavior, and the real AZD hook skip
+without changing existing secrets. All **13 checks passed** on Windows with
+AZD 1.38.0. The packaging test copies only nonignored source inputs into a
+temporary repository-root layout, isolates AZD/profile state, reuses the NuGet
+cache, instruments the actual MSBuild publish SDK, validates both ZIPs, and
+cleans up. It never selects or refreshes the developer's active environment.
+Both packages passed with SDK 10.0.404 even with SDK 11 preview installed.
+Bicep/discovery and both dev/demo parameter profiles passed locally with
+Bicep 0.49.2. GitHub workflow syntax was checked with actionlint 1.7.7;
+the protected cloud workflow was **not run**.
 
 ### Linux compatibility
 
@@ -285,10 +447,12 @@ profile.
 
 ## Verification and cleanup
 
-To view the nonsecret provisioning outputs:
+Read only the nonsecret outputs needed for verification, rather than dumping
+the entire AZD environment (which may contain unrelated local values):
 
 ```powershell
-azd env get-values -e demo02-dev
+azd env get-value pizzaOpsDashboardUrl -e demo02-dev
+azd env get-value pizzaOpsFunctionAppName -e demo02-dev
 ```
 
 To delete the resources created for the environment (including both demos):
@@ -297,5 +461,11 @@ To delete the resources created for the environment (including both demos):
 azd down -e demo02-dev
 ```
 
-This is destructive and deletes the resources in the environment's resource
-group.
+**Shared-resource destruction:** root `azd down` deletes the shared environment,
+including Demo 02 Foundry resources and PizzaOps storage/data, plans, apps and
+telemetry. It is not a PizzaOps reset or routine recovery step. Obtain explicit
+approval from both demos' owners, confirm the environment/subscription and
+resource inventory, and back up needed data first. Never run cleanup
+automatically after a failed deployment. Prefer the explicit kitchen reset for
+rehearsal; if only PizzaOps must be removed, plan a separately reviewed,
+resource-scoped removal rather than deleting the shared group.

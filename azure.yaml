@@ -1,10 +1,24 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 name: mcp-demos
 
+requiredVersions:
+  azd: ">= 1.38.0"
+
 infra:
   provider: bicep
   path: ./infra
   module: main
+
+services:
+  pizzaops-functions:
+    project: ./src/MCP-Demos03-PizzaOps/src/PizzaOps.Functions
+    language: csharp
+    host: function
+    remoteBuild: false
+  pizzaops-dashboard:
+    project: ./src/MCP-Demos03-PizzaOps/src/PizzaOps.Dashboard
+    language: csharp
+    host: appservice
 
 hooks:
   postprovision:

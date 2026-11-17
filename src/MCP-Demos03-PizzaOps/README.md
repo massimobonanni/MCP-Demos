@@ -407,11 +407,48 @@ dotnet format .\PizzaOps.sln --verify-no-changes --no-restore
 ```
 
 The SDK pin is scoped to this solution; existing repository demos continue to
-use the repository-level SDK. Future AZD service entries should point to the
-PizzaOps project directories under this folder so their build processes find
-this `global.json` by walking up from the service directory. The repository's
-current root `azure.yaml` has no PizzaOps services, so AZD packaging is not part
-of this scaffold task.
+use their existing SDK selection. **Project paths alone do not make AZD honor
+this SDK pin.** AZD 1.38.0 runs .NET from its working directory. From the
+repository root use the explicit scoped working directory:
+
+```powershell
+azd package --cwd .\src\MCP-Demos03-PizzaOps --all -e <environment> --no-prompt
+```
+
+AZD still discovers the single root [azure.yaml](../../azure.yaml). Both
+`pizzaops-functions` and `pizzaops-dashboard` publish with SDK 10.0.404 in the
+offline packaging test, including when a .NET 11 preview is the root default.
+No root SDK pin affects sibling demos. The Functions ZIP uses worker indexing
+from the pinned SDK and native AZD Flex deployment with remote build disabled.
+See the [infrastructure lifecycle and CI guide](../../infra/README.md#package-provision-deploy-and-reset-are-different-operations)
+for environment creation, protected OIDC setup, nonsecret outputs, verification
+and known-good package rollback.
+
+`azd provision` creates shared Demo 02/PizzaOps resources, empty tables and
+RBAC; `azd deploy --all` deploys the two apps; `azd up` combines the lifecycle.
+Use the same `--cwd` option for commands that build. None seeds/resets the
+kitchen or retrieves the MCP key. Reset remains the explicit, separately
+authorized operator procedure above. A new empty kitchen correctly fails
+readiness until the operator resets and verifies it.
+
+**Do not use root `azd down` as reset or recovery:** it destroys the shared
+environment, including Demo 02 Foundry and PizzaOps table data. Cleanup requires
+explicit approval and a resource/data review.
+
+From the repository root, run the no-cloud AZD regressions:
+
+```powershell
+pwsh -NoProfile -File .\scripts\azd\tests\Test-PizzaOpsInfrastructure.ps1
+pwsh -NoProfile -File .\scripts\azd\tests\Test-Demo02Secrets.ps1
+pwsh -NoProfile -File .\scripts\azd\tests\Test-PizzaOpsPackage.ps1
+```
+
+These compile Bicep/parameters, check discovery contracts, exercise 13 offline
+Demo 02 hook cases, and inspect both actual ZIPs and publish SDKs. Local
+postprovision still materializes Demo 02 secrets as before; only the protected
+GitHub job explicitly opts out of that local-user operation. No-cloud CI runs
+these alongside the existing checks. Cloud deployment is manual, approval-
+protected, OIDC-authenticated and environment-serialized; it never auto-resets.
 
 The integration tests are opt-in and use a running Azurite Table service when
 explicitly enabled. The reset integration test covers repeatability, recovery

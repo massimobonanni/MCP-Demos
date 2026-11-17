@@ -1,0 +1,7 @@
+<Project>
+  <Target Name="RecordPizzaOpsPackageSdk" BeforeTargets="PrepareForBuild"
+          Condition="'$(MSBuildProjectName)' == 'PizzaOps.Functions' Or '$(MSBuildProjectName)' == 'PizzaOps.Dashboard'">
+    <WriteLinesToFile File="$(PIZZAOPS_PACKAGE_EVIDENCE)/$(MSBuildProjectName).sdk"
+                      Lines="$(NETCoreSdkVersion)" Overwrite="true" />
+  </Target>
+</Project>
