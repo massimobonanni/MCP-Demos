@@ -2,6 +2,8 @@
 
 ## 1. Vision and objectives
 
+Functional description: `docs/descriptions/demo03.md`.
+
 Stage Director is a **local, non-destructive Model Context Protocol (MCP) demo**. Through an MCP-compatible client, an AI agent acts as a *virtual stage director* and controls a graphical representation of a stage: scene, simulated lighting, projected message, and animations. The user issues commands in natural language; the model chooses which MCP tools to invoke; the C# code validates the requests, changes the stage state, and makes it visible through a local web page.
 
 The demo must make three educational points clear:
