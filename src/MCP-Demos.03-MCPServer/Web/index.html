@@ -7,15 +7,29 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/stage.js" defer></script>
 </head>
-<body>
-  <header>
+<body data-connection="connecting">
+  <header class="masthead">
     <h1>STAGE DIRECTOR</h1>
-    <p id="connection" role="status" aria-live="polite">CONNECTING</p>
+    <div class="connection" role="status" aria-atomic="true">
+      <p class="connection-label" id="connection">CONNECTING</p>
+      <p id="connection-detail" hidden>Stage Director unreachable</p>
+    </div>
   </header>
-  <main>
-    <p id="scene">&nbsp;</p>
-    <h2 id="title">&nbsp;</h2>
-    <p id="subtitle">&nbsp;</p>
+  <main class="stage" id="stage" aria-labelledby="title">
+    <div class="scenery" aria-hidden="true">
+      <div class="beam beam-left"></div>
+      <div class="beam beam-right"></div>
+      <div class="floor"></div>
+    </div>
+    <div class="screen" aria-live="polite" aria-atomic="true">
+      <h2 id="title">Waiting for the stage</h2>
+      <p id="subtitle">The current scene will appear here.</p>
+    </div>
+    <div class="stage-footer">
+      <p class="scene-label">SCENE <span id="scene">PENDING</span></p>
+      <p class="stale-label" id="stale" hidden>STALE &middot; LAST KNOWN SCENE</p>
+    </div>
+    <div class="confetti" id="confetti" aria-hidden="true"></div>
   </main>
 </body>
 </html>
