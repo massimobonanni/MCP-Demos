@@ -15,7 +15,7 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 | 3 | Expose the three constrained MCP tools | Done |
 | 4 | Add the same-process, read-only localhost HTTP server | Done |
 | 5 | Build the accessible Stage Director dashboard | Done |
-| 6 | Configure VS Code MCP integration and document the demo | ToDo |
+| 6 | Configure VS Code MCP integration and document the demo | Done |
 | 7 | Verify acceptance criteria and live-demo behavior | ToDo |
 
 ## Tasks and implementation prompts
@@ -81,8 +81,8 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 ### Task 6 — Configure VS Code MCP integration and document the demo
 
 **Dependencies:** Tasks 1, 3, 4, and 5  
-**Status:** ToDo  
-**Target files:** `src/MCP-Demos.03-MCPServer/.vscode/mcp.json`, `src/MCP-Demos.03-MCPServer/README.md`
+**Status:** Done
+**Target files:** `.mcp.json` (repository root), `src/MCP-Demos.03-MCPServer/README.md`
 
 **Prompt:**
 
