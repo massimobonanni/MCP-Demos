@@ -1,70 +1,77 @@
 # Demo 03 — Stage Director
 
-Stage Director is a local .NET 10 MCP demo. Copilot selects a predefined virtual-stage scene through MCP; a browser dashboard displays the in-memory state.
+[Overview](#overview) · [Installation](#installation) · [Usage](#usage) · [Class diagram](#class-diagram)
 
-## Run the demo
+## Overview
 
-Prerequisite: the .NET 10 SDK, VS Code with GitHub Copilot, and a local checkout of this repository.
+Stage Director shows how GitHub Copilot can use the Model Context Protocol (MCP) to change a virtual stage during a talk. Ask for fewer distractions, more energy, or a finale, and the browser dashboard reflects the scene Copilot selects.
 
-1. From the repository root, build the server:
+A single .NET 10 console process handles MCP over stdio and serves the dashboard over HTTP on `127.0.0.1`. The browser polls the read-only `GET /api/stage` endpoint; only MCP tools can change the scene. The dashboard assets are embedded in the project, and the stage state lives in memory. The server requires no cloud resources or database and does not control physical devices.
 
-   ```powershell
-   dotnet build .\src\MCP-Demos.03-MCPServer\StageDirector.csproj -c Release
-   ```
+## Installation
 
-2. The repository-root [`.mcp.json`](../../.mcp.json) configures the already-built `StageDirector.dll` over stdio; it does not use `dotnet run`. VS Code's current Copilot workspace configuration uses the portable `mcpServers` schema in `.mcp.json`, not the legacy `.vscode/mcp.json` `servers` schema. Enable the experimental `chat.mcp.workspaceRootConfig.enabled` setting if needed, open this repository as the workspace, select the Copilot session target, and connect/start **stage-director** from **Chat: Open Customizations > MCP Servers**. Review and approve starting this local server. Confirm Copilot can call `get_stage_status`.
-3. **After MCP is connected**, open <http://127.0.0.1:5187/> in a browser. Keep the VS Code-managed server running while presenting.
-4. When finished, use the server's **Stop** action in VS Code (or close VS Code) to shut down the process and release the port.
+**Prerequisites:** a local checkout of this repository, the .NET 10 SDK, and VS Code with GitHub Copilot.
 
-The server defaults to port `5187`. To use another available port, replace the `stage-director` entry in `.mcp.json` with this entry, changing the example port if needed:
+Stop **stage-director** in VS Code before rebuilding if it is already running. On Windows, the running process locks the DLL. From the repository root, run:
 
-```json
-"stage-director": {
-  "type": "stdio",
-  "command": "dotnet",
-  "args": [
-    "src/MCP-Demos.03-MCPServer/bin/Release/net10.0/StageDirector.dll"
-  ],
-  "env": {
-    "STAGE_DIRECTOR_PORT": "5188"
-  }
-}
+```powershell
+dotnet build .\src\MCP-Demos.03-MCPServer\StageDirector.csproj -c Release
 ```
 
-Use a decimal port from `1024` through `65535`, then reconnect/restart the MCP server and open `http://127.0.0.1:5188/`. Keep the dashboard URL and configured port in sync.
+Open the repository root as the VS Code workspace. The included [`.mcp.json`](../../.mcp.json) uses the `mcpServers` schema and launches the built `StageDirector.dll` directly, not through `dotnet run`. If VS Code doesn't load the root configuration, enable `chat.mcp.workspaceRootConfig.enabled` if available. See the [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration) for setup details.
 
-## Presenter notes
+## Usage
+
+1. Select the Copilot session target in VS Code. Open **Chat: Open Customizations > MCP Servers**, start **stage-director**, and approve the local server.
+2. **After the MCP server connects**, open <http://127.0.0.1:5187/>. The dashboard starts in `welcome`.
+3. Try the prompts below. The dashboard updates without a reload.
+4. When finished, use **Stop** in VS Code to shut down the server and release the port.
+
+> [!TIP]
+> If `5187` is occupied, add `"env": { "STAGE_DIRECTOR_PORT": "5188" }` to the `stage-director` entry in [`.mcp.json`](../../.mcp.json). Choose a free port from `1024` through `65535`, restart the server, and open the dashboard on the same port.
+
+### MCP tools
 
 | MCP tool | What it does |
 |---|---|
-| `get_stage_status` | Reads the active scene, its visual settings, revision, and available scene IDs. |
-| `activate_scene` | Selects one of the four predefined scenes: `welcome`, `focus`, `energy`, or `celebration`. |
-| `reset_stage` | Returns to `welcome`; repeating an unchanged activation or reset does not create a new revision. |
+| `get_stage_status` | Reads the active scene, visual settings, revision, and available scene IDs. |
+| `activate_scene` | Switches to the specified `scene`. Activating the current scene leaves its revision unchanged. |
+| `reset_stage` | Returns to `welcome` without creating a new revision if `welcome` is already active. |
 
-| Scene | On-screen treatment |
-|---|---|
-| `welcome` | Blue, softly animated welcome screen. |
-| `focus` | Minimal dark screen with subdued motion. |
-| `energy` | Purple/orange screen with moderate pulsing. |
-| `celebration` | Thank-you screen with a brief, approximately four-second confetti effect. |
+### Demo prompts
 
-**Two separate channels:** Copilot starts the C# process and exchanges MCP messages over stdin/stdout (stdio); diagnostics go to stderr. The browser talks to that same process over loopback HTTP, fetching the page assets and read-only `GET /api/stage` snapshot. The dashboard does not invoke MCP or provide scene-changing controls. The model chooses a tool, the server validates and updates state, and the browser reflects the result.
-
-**Safe demo boundaries:** the server binds only to `127.0.0.1`. Tools accept only the fixed scene IDs; HTTP serves a fixed read-only allowlist. There is no cloud connection, physical lighting or hardware control, arbitrary file or command access, database, or persistence. State exists only in process memory and returns to `welcome` on restart.
-
-### Natural-language prompts
-
-- “Check the current Stage Director status.”
-- “Set the stage to focus for a technical talk with fewer distractions.”
-- “Bring up the energy for the audience.”
-- “Switch to celebration for the finale.”
-- “Reset the stage to welcome.”
+| Ask Copilot | Expected scene | On screen |
+|---|---|---|
+| "We're starting a technical talk. We need fewer distractions." | `focus` | Dark stage with subdued motion and `FOCUS MODE`. |
+| "The audience needs some energy!" | `energy` | Purple and orange stage with gently pulsing lights. |
+| "We're done. Let's have a grand finale!" | `celebration` | `THANK YOU!` and about four seconds of confetti. Repeating the request does not replay it. |
+| "Reset the stage to welcome." | `welcome` | Blue, softly animated welcome screen. |
 
 ### Troubleshooting
 
-- **MCP config/server is missing:** open the repository root as the VS Code workspace and enable `chat.mcp.workspaceRootConfig.enabled` if available. Check the Copilot session target and the MCP server output in VS Code.
-- **Server fails to start:** build the `Release` target first, confirm the .NET 10 runtime is installed, and check that the configured DLL path matches the workspace-root-relative path in `.mcp.json`.
-- **Port conflict:** startup fails with a diagnostic if another process (including another Stage Director instance) owns the port. Set `STAGE_DIRECTOR_PORT` to a free valid port, restart the server, and use that port in the browser URL.
-- **Dashboard says `DISCONNECTED` / “Stage Director unreachable”:** connect or restart the MCP server first, check that its selected port matches the URL, then reload the page. A stopped server has no dashboard listener.
+- **Server does not start:** confirm the Release build succeeded and that the DLL path in [`.mcp.json`](../../.mcp.json) is relative to the workspace root. Check the MCP server output in VS Code for startup errors.
+- **Dashboard says `DISCONNECTED`:** restart the MCP server and check the URL's port. An already-open dashboard reconnects automatically. If the page never loaded, open it again after connecting.
 
-For current setup details, see the official [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration) and [Add MCP servers in VS Code](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
+## Class diagram
+
+The MCP tools and HTTP listener share one `StageService`. The tools read or change the scene through the service; the listener only reads its immutable snapshot.
+
+```mermaid
+classDiagram
+    direction LR
+    StageTools --> StageService : reads and changes state
+    LocalStageHttpServer --> StageService : reads state
+    LocalStageHttpServer --> LocalStageHttpServerOptions : uses
+    StageService --> StageState : holds current snapshot
+    StageService ..> StageSceneCatalog : selects preset
+    StageService ..> StageChangeResult : returns
+    StageSceneCatalog --> StageScene : defines presets
+    StageScene --> StageTheme : uses
+    StageState --> StageTheme : exposes
+    StageChangeResult --> StageState : includes
+    class StageService {
+        GetSnapshot() StageState
+        ActivateScene(scene) StageChangeResult
+        Reset() StageChangeResult
+    }
+```

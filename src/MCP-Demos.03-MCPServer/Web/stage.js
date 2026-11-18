@@ -16,7 +16,7 @@
   const confetti = document.getElementById('confetti');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const hexColor = /^#[0-9a-f]{6}$/i;
-  let renderedRevision = null;
+  let renderedActivation = null;
   let confettiTimer;
   let inFlight = false;
 
@@ -24,6 +24,7 @@
     const theme = snapshot?.theme;
     const isColor = value => typeof value === 'string' && hexColor.test(value);
     return Number.isSafeInteger(snapshot?.revision) && snapshot.revision > 0
+      && typeof snapshot.activatedAtUtc === 'string' && Number.isFinite(Date.parse(snapshot.activatedAtUtc))
       && ['welcome', 'focus', 'energy', 'celebration'].includes(snapshot.scene)
       && typeof snapshot.title === 'string' && typeof snapshot.subtitle === 'string'
       && ['none', 'ambient', 'pulse', 'confetti'].includes(snapshot.effect)
@@ -70,8 +71,6 @@
     scene.textContent = snapshot.scene.toUpperCase();
     title.textContent = snapshot.title;
     subtitle.textContent = snapshot.subtitle;
-    renderedRevision = snapshot.revision;
-
     if (snapshot.effect === 'confetti') {
       celebrate(Math.min(snapshot.effectDurationMs, 4000), [accent, ...effectColors]);
     }
@@ -85,7 +84,7 @@
     document.body.dataset.connection = state;
     connection.textContent = state.toUpperCase();
     connectionDetail.hidden = !disconnected;
-    stale.hidden = !disconnected || renderedRevision === null;
+    stale.hidden = !disconnected || renderedActivation === null;
     if (disconnected) {
       stopConfetti();
     }
@@ -112,8 +111,11 @@
       if (!isSnapshot(snapshot)) {
         throw new Error('Invalid stage snapshot');
       }
-      if (snapshot.revision !== renderedRevision) {
+      // Revisions restart at 1 in a new server process.
+      const activation = `${snapshot.revision}:${snapshot.activatedAtUtc}`;
+      if (activation !== renderedActivation) {
         render(snapshot);
+        renderedActivation = activation;
       }
       setConnection('connected');
     } catch {

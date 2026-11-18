@@ -16,7 +16,7 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 | 4 | Add the same-process, read-only localhost HTTP server | Done |
 | 5 | Build the accessible Stage Director dashboard | Done |
 | 6 | Configure VS Code MCP integration and document the demo | Done |
-| 7 | Verify acceptance criteria and live-demo behavior | ToDo |
+| 7 | Verify acceptance criteria and live-demo behavior | Done |
 
 ## Tasks and implementation prompts
 
@@ -91,12 +91,15 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 ### Task 7 — Verify acceptance criteria and live-demo behavior
 
 **Dependencies:** Tasks 3, 4, 5, and 6  
-**Status:** ToDo  
+**Status:** Done
+
 **Target files:** Demo 03 project and its verification documentation/scripts only if needed
 
 **Prompt:**
 
 > Verify Demo 03 against `docs/descriptions/demo03.md` acceptance criteria without adding a second Demo 03 `.csproj`, application process, or runtime dependency. Build the single project, then exercise the server using a compliant stdio MCP client and local HTTP requests. Check exact discovery and invocation of all three tools; initial state; matching MCP and `/api/stage` snapshots; each scene transition; invalid-scene rejection without state mutation; repeated activation/reset idempotency; monotonically increasing revisions under rapid calls; the HTTP GET allowlist and absence of write methods; loopback-only binding; cache/security headers; disconnected/stale UI and single-shot celebration effect; stdout purity; invalid/occupied port diagnostics; and clean listener shutdown/port release. Run the opening, change-of-pace, and finale narratives. Fix any failures and record the actual build/smoke-test commands and any remaining environment-dependent limitation in the README. At the end of the task, when you complete it, update the status table.
+
+The Release build, both stdio protocol variants, and the live browser narratives passed. The [smoke client](../../src/MCP-Demos.03-MCPServer/Test-StageDirector.ps1) ran on port `5188` with separate build output because a VS Code-owned instance held port `5187` and the normal Release DLL. The smoke client drove the tool calls; live Copilot tool selection remains a presenter rehearsal.
 
 ## Dependency order
 
