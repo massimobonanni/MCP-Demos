@@ -1,6 +1,6 @@
 # Demo 03 — Stage Director
 
-[Overview](#overview) · [Installation](#installation) · [Usage](#usage) · [Class diagram](#class-diagram)
+[Overview](#overview) · [Installation](#installation) · [Usage](#usage) · [Smoke test](#smoke-test) · [Class diagram](#class-diagram)
 
 ## Overview
 
@@ -51,6 +51,34 @@ Open the repository root as the VS Code workspace. The included [`.mcp.json`](..
 
 - **Server does not start:** confirm the Release build succeeded and that the DLL path in [`.mcp.json`](../../.mcp.json) is relative to the workspace root. Check the MCP server output in VS Code for startup errors.
 - **Dashboard says `DISCONNECTED`:** restart the MCP server and check the URL's port. An already-open dashboard reconnects automatically. If the page never loaded, open it again after connecting.
+
+## Smoke test
+
+[`Test-StageDirector.ps1`](./Test-StageDirector.ps1) runs an end-to-end smoke test against a separate Stage Director process; it does not require VS Code or a Copilot session. It checks startup errors for invalid or occupied ports, MCP discovery and tool schemas, the dashboard's HTTP routes and security headers, scene changes and reset behavior, invalid inputs, idempotency, concurrent requests, and clean shutdown. The script also confirms that the MCP status and HTTP snapshot agree.
+
+Build the Release configuration first, then run the script from the repository root in PowerShell 7.5 or later:
+
+```powershell
+dotnet build .\src\MCP-Demos.03-MCPServer\StageDirector.csproj -c Release
+pwsh -File .\src\MCP-Demos.03-MCPServer\Test-StageDirector.ps1
+```
+
+By default, the script uses `bin\Release\net10.0\StageDirector.dll` next to itself and port `5187`. Make sure no other process is listening on the selected port. Optional parameters:
+
+| Parameter | Description |
+|---|---|
+| `-Port 5188` | Use a different dashboard port. |
+| `-Dll <path>` | Test a different built `StageDirector.dll`. |
+| `-LegacyProtocol` | Test MCP initialization using protocol version `2025-11-25` instead of the current discovery flow. |
+| `-ObserveBrowser` | Pause to let you open the dashboard, then add delays between scene changes so they are visible. |
+
+For example, to observe the test in a browser on port `5188`:
+
+```powershell
+pwsh -File .\src\MCP-Demos.03-MCPServer\Test-StageDirector.ps1 -Port 5188 -ObserveBrowser
+```
+
+The script prints `PASS` messages as checks succeed and exits with an error if an assertion fails.
 
 ## Class diagram
 
