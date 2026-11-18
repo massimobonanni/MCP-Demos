@@ -11,9 +11,9 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 | # | Task | Status |
 |---:|---|---|
 | 1 | Scaffold the .NET 10 console project and MCP stdio host | Done |
-| 2 | Implement the scene domain and thread-safe in-memory service | ToDo |
-| 3 | Expose the three constrained MCP tools | ToDo |
-| 4 | Add the same-process, read-only localhost HTTP server | ToDo |
+| 2 | Implement the scene domain and thread-safe in-memory service | Done |
+| 3 | Expose the three constrained MCP tools | Done |
+| 4 | Add the same-process, read-only localhost HTTP server | Done |
 | 5 | Build the accessible Stage Director dashboard | ToDo |
 | 6 | Configure VS Code MCP integration and document the demo | ToDo |
 | 7 | Verify acceptance criteria and live-demo behavior | ToDo |
@@ -34,7 +34,8 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 ### Task 2 — Implement the scene domain and thread-safe in-memory service
 
 **Dependencies:** Task 1  
-**Status:** ToDo  
+**Status:** Done
+
 **Target files:** `Domain/StageScene.cs`, `Domain/StageState.cs`, `Domain/StageSceneCatalog.cs`, `Services/StageService.cs`
 
 **Prompt:**
@@ -44,22 +45,27 @@ The plan preserves the specification's invariants: four predefined scenes, no de
 ### Task 3 — Expose the three constrained MCP tools
 
 **Dependencies:** Task 2  
-**Status:** ToDo  
-**Target files:** `Mcp/StageTools.cs`, `Program.cs`
+**Status:** Done
+
+**Target files:** `Mcp/StageTools.cs`, `Extensions/ServiceCollectionExtension.cs`, `Extensions/DelegateExtension.cs`, `Program.cs`
 
 **Prompt:**
 
 > Add the MCP tool adapter for the shared `StageService`, exposing exactly `get_stage_status`, `activate_scene`, and `reset_stage` with stable snake_case names. Follow the pinned official MCP C# SDK APIs and project instructions. Provide the exact purpose-oriented descriptions and the strict parameter contracts from `docs/descriptions/demo03.md`: status and reset take no parameters; activation requires one `scene` string constrained to the four canonical identifiers, with no additional properties. Return JSON-serializable snapshots and activation/reset results including success, changed, previous/current scene, revision, and stage. Invalid scenes must produce an MCP tool error (not a success-shaped response), identify the allowed values without leaking stack traces or host details, and leave state unchanged. Keep tool methods thin, use the injected singleton service, and ensure cancellation is supported where applicable. Do not add generic execution, filesystem, network, or hardware tools. At the end of the task, when you complete it, update the status table.
 
+`ServiceCollectionExtension.RegisterMCPTools` registers the three tools explicitly, using `McpToolsUtility.CreateMcpTool` to attach each input schema. `StageTools` validates raw MCP arguments before invoking the shared service.
+
 ### Task 4 — Add the same-process, read-only localhost HTTP server
 
 **Dependencies:** Tasks 1 and 2  
-**Status:** ToDo  
+**Status:** Done  
 **Target files:** `Http/LocalStageHttpServer.cs`, `Program.cs`, `StageDirector.csproj`
 
 **Prompt:**
 
 > Implement the minimal HTTP server in the same Stage Director process using `System.Net.HttpListener` (or another standard .NET API only if documented compatibility requires it), without ASP.NET Core or the MCP HTTP transport. Bind exclusively to `http://127.0.0.1:{port}/`; default to port 5187 and validate `STAGE_DIRECTOR_PORT` as an integer from 1024 through 65535 before startup. Serve only the explicit GET allowlist `/`, `/styles.css`, `/stage.js`, and `/api/stage`; return 404/405 otherwise and never expose a state-changing route, arbitrary file serving, directory listing, or CORS. Embed the three static assets in this same project. `/api/stage` must serialize the same immutable snapshot returned by `get_stage_status`, with `Cache-Control: no-store`; set `X-Content-Type-Options: nosniff` and a restrictive CSP compatible with the local assets. Bound request handling with timeouts and isolate client disconnects so they cannot stop MCP. On port/listener startup failure, report a clear diagnostic to stderr and fail startup rather than silently running a partial demo. Wire listener startup and cancellation into `Program.cs`, share the single `StageService`, and release the port on process shutdown. At the end of the task, when you complete it, update the status table.
+
+`LocalStageHttpServer` is an `HttpListener`-based hosted service registered before the MCP stdio transport. Verified on Windows: http.sys binds only `127.0.0.1:{port}` and an occupied port fails `Start()`. Startup failures surface as `StageHttpServerStartupException`; `Program.cs` writes them to stderr and exits with code 1. `/api/stage` uses the MCP tools' `McpToolsUtility.SerializerOptions`. `Web/*` currently contains minimal placeholder assets that Task 5 replaces.
 
 ### Task 5 — Build the accessible Stage Director dashboard
 

@@ -16,4 +16,11 @@
     <PackageReference Include="ModelContextProtocol" Version="2.4.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Dashboard assets ship inside the single assembly; explicit names keep the server's resource lookup stable. -->
+    <EmbeddedResource Include="Web\index.html" LogicalName="StageDirector.Web.index.html" />
+    <EmbeddedResource Include="Web\styles.css" LogicalName="StageDirector.Web.styles.css" />
+    <EmbeddedResource Include="Web\stage.js" LogicalName="StageDirector.Web.stage.js" />
+  </ItemGroup>
+
 </Project>

@@ -152,6 +152,15 @@ The `Web/*` files belong to **the same project**. For a self-contained deploymen
 
 Scenes are configured **in code**, with predefined colors and text. The model must not be allowed to send HTML, JavaScript, CSS, file paths, URLs, shell instructions, or arbitrary parameters for the UI to interpret. Transitions should be pleasant but brief (approximately 200–500 ms); motion must respect `prefers-reduced-motion`.
 
+The catalog uses the following concrete theme and effect values:
+
+| Scene | Background | Accent | Intensity | Effect | Effect colors | Duration (ms) |
+|---|---|---|---|---|---|---:|
+| `welcome` | `#101B39` | `#83BAFF` | `soft` | `ambient` | None | 0 |
+| `focus` | `#242424` | `#FFFFFF` | `minimal` | `none` | None | 0 |
+| `energy` | `#481D59` | `#FFD34C` | `dynamic` | `pulse` | `#FF8C42` | 0 |
+| `celebration` | `#14532D` | `#FFD700` | `festive` | `confetti` | `#FF4D8D`, `#45D9FF`, `#A78BFF` | 4000 |
+
 ### 5.2 Current state
 
 An immutable `StageState` value represents a snapshot of the entire scene and includes at least:
@@ -162,7 +171,7 @@ An immutable `StageState` value represents a snapshot of the entire scene and in
 | `revision` | increasing integer | Incremented for each **effective** state change. |
 | `title` | string | Scene's main message. |
 | `subtitle` | string | Scene's secondary message. |
-| `theme` | object | Colors and simulated intensity, calculated from the catalog. |
+| `theme` | object | Catalog-defined `background`, `accent`, `intensity`, and an `effectColors` array (empty when no additional colors are used). |
 | `effect` | string | `none`, `ambient`, `pulse`, or `confetti`. |
 | `effectDurationMs` | integer | Maximum duration of a temporary effect; `0` for permanent effects. |
 | `activatedAtUtc` | ISO 8601 | UTC date/time of the last effective activation. |
@@ -214,7 +223,7 @@ Public names are stable, use `snake_case`, and the descriptions exposed to the m
   "revision": 1,
   "title": "WELCOME",
   "subtitle": "The show is about to begin",
-  "theme": { "background": "#101B39", "accent": "#83BAFF", "intensity": "soft" },
+  "theme": { "background": "#101B39", "accent": "#83BAFF", "intensity": "soft", "effectColors": [] },
   "effect": "ambient",
   "effectDurationMs": 0,
   "activatedAtUtc": "2026-11-17T09:00:00Z",
@@ -256,13 +265,12 @@ The timestamp is illustrative only. At runtime, it must correspond to the actual
   "previousScene": "welcome",
   "currentScene": "energy",
   "revision": 2,
-  "message": "Scene energy activated.",
   "stage": {
     "scene": "energy",
     "revision": 2,
     "title": "ENERGY MODE",
     "subtitle": "Let's wake up the room!",
-    "theme": { "background": "#481D59", "accent": "#FFD34C", "intensity": "dynamic" },
+    "theme": { "background": "#481D59", "accent": "#FFD34C", "intensity": "dynamic", "effectColors": ["#FF8C42"] },
     "effect": "pulse",
     "effectDurationMs": 0,
     "activatedAtUtc": "2026-11-17T09:01:00Z",
